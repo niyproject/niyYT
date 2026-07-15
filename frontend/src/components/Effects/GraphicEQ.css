@@ -1,0 +1,6 @@
+.eq-title { font-size: 14px; font-weight: bold; color: #ffaa00; margin-bottom: 5px; margin-top: 15px;}
+.eq-rack { display: flex; overflow-x: auto; gap: 15px; padding: 20px 10px; background: #111; border-radius: 6px; border: 2px solid #333; margin-bottom: 20px; }
+.eq-band { display: flex; flex-direction: column; align-items: center; min-width: 40px; }
+.eq-band span { font-size: 10px; color: #aaa; margin-bottom: 10px; font-weight: bold; }
+.eq-val { font-size: 10px; color: #ff4444; margin-top: 10px; }
+input[type=range].vertical-slider { -webkit-appearance: slider-vertical; appearance: slider-vertical; width: 20px; height: 150px; cursor: pointer; accent-color: #00C851; }

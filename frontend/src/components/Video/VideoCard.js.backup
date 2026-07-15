@@ -1,0 +1,127 @@
+import './VideoCard.css';
+import { fetchDirectUrl } from '../../api/youtube';
+
+export function renderVideoCard(containerId, onVideoReady) {
+    const container = document.getElementById(containerId);
+    
+    // Ambil data dari memori browser
+    const savedUrl = localStorage.getItem('yt_cached_url') || '';
+    
+    container.innerHTML = `
+        <div class="card video-card-ui">
+            <h2>Dual-Channel EQ Proxy</h2>
+            <div>
+                <input type="text" id="urlInput" placeholder="Paste URL YouTube..." value="${savedUrl}">
+                <button id="btnLoad">Load Video</button>
+            </div>
+            <div id="statusMessage" class="status">Menunggu URL...</div>
+            
+            <div class="video-container" id="vidContainer">
+                <video id="mainPlayer" crossorigin="anonymous" playsinline></video>
+                <div class="video-controls">
+                    <button class="btn-control" id="btnPip">Melayang (PiP)</button>
+                    <button class="btn-control" id="btnFullscreen">Layar Penuh</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const btnLoad = document.getElementById('btnLoad');
+    const urlInput = document.getElementById('urlInput');
+    const statusMessage = document.getElementById('statusMessage');
+    const vidContainer = document.getElementById('vidContainer');
+    const player = document.getElementById('mainPlayer');
+    const btnPip = document.getElementById('btnPip');
+    const btnFullscreen = document.getElementById('btnFullscreen');
+
+    // Fungsi utama untuk memuat video (Bisa dipanggil manual atau otomatis)
+    const loadAndPlayVideo = async (url) => {
+        statusMessage.innerText = "Mengekstrak URL...";
+        try {
+            const data = await fetchDirectUrl(url);
+            player.src = `/stream-video?url=${encodeURIComponent(data.directUrl)}`;
+            vidContainer.style.display = "block";
+            player.controls = true;
+
+            // KUNCI AUTO-RESUME: Pas data video (durasi, resolusi) udah masuk, set detiknya!
+            player.addEventListener('loadedmetadata', function onMeta() {
+                const savedTime = localStorage.getItem('yt_saved_time');
+                if (savedTime && parseFloat(savedTime) > 0) {
+                    player.currentTime = parseFloat(savedTime);
+                }
+                player.removeEventListener('loadedmetadata', onMeta); // Biar jalan sekali aja
+            });
+
+            // Note: Browser punya aturan ketat soal Autoplay. 
+            // Kalau gagal autoplay karena belum di-klik user, biarkan user klik tombol play di videonya.
+            try {
+                await player.play();
+            } catch (playError) {
+                statusMessage.innerText = "Video siap! Silakan klik Play.";
+            }
+
+        } catch (err) {
+            statusMessage.innerText = "Gagal ekstrak URL!";
+        }
+    };
+
+    // 1. EVENT KLIK TOMBOL LOAD (Manual)
+    btnLoad.addEventListener('click', () => {
+        const url = urlInput.value.trim();
+        if (!url) return;
+
+        // Kalau user masukin link baru, reset waktunya ke 0
+        if (url !== localStorage.getItem('yt_cached_url')) {
+            localStorage.setItem('yt_saved_time', '0');
+        }
+
+        localStorage.setItem('yt_cached_url', url);
+        loadAndPlayVideo(url);
+    });
+
+    // 2. AUTO-LOAD PAS PAGE DI REFRESH
+    if (savedUrl) {
+        loadAndPlayVideo(savedUrl);
+    }
+
+    // 3. SIMPAN DURASI SECARA BERKALA KE MEMORI
+    player.addEventListener('timeupdate', () => {
+        if (player.currentTime > 0) {
+            localStorage.setItem('yt_saved_time', player.currentTime);
+        }
+    });
+
+    // Event saat video bener-bener udah bisa jalan
+    player.oncanplay = () => {
+        statusMessage.innerText = "Video siap! Geser slider EQ untuk memoles frekuensi.";
+        onVideoReady(player);
+    };
+
+    // ==========================================
+    // FITUR MELAYANG (PiP) & FULLSCREEN
+    // ==========================================
+
+    btnPip.addEventListener('click', async () => {
+        try {
+            if (document.pictureInPictureElement) {
+                await document.exitPictureInPicture();
+            } else {
+                await player.requestPictureInPicture();
+            }
+        } catch (error) {
+            console.error("Gagal mode PiP:", error);
+        }
+    });
+
+    btnFullscreen.addEventListener('click', async () => {
+        try {
+            if (document.fullscreenElement) {
+                await document.exitFullscreen();
+            } else {
+                await vidContainer.requestFullscreen();
+            }
+        } catch (error) {
+            console.error("Gagal mode Fullscreen:", error);
+        }
+    });
+}

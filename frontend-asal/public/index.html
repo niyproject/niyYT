@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Audio DAW & Dual 30-Band EQ</title>
+    <style>
+        body { font-family: system-ui, sans-serif; padding: 20px; background: #121212; color: #fff; max-width: 900px; margin: auto; }
+        .card { background: #1e1e1e; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        input[type="text"] { padding: 12px; width: 60%; background: #2a2a2a; color: white; border: 1px solid #333; border-radius: 4px; }
+        button { padding: 12px 15px; background: #ff0000; color: #fff; border: none; cursor: pointer; border-radius: 4px; font-weight: bold; }
+        button:hover { background: #cc0000; }
+        
+        video { width: 100%; display: none; margin-top: 15px; border-radius: 8px; background: #000; }
+        
+        .mixer { display: none; background: #222; padding: 20px; border-radius: 8px; margin-top: 20px; border: 1px solid #444; }
+        .mixer h3 { margin-top: 0; color: #00C851; border-bottom: 1px solid #444; padding-bottom: 10px; }
+        
+        .track { margin-bottom: 15px; background: #1a1a1a; padding: 15px; border-radius: 6px;}
+        .track label { display: flex; justify-content: space-between; font-size: 14px; color: #00C851; font-weight: bold; margin-bottom: 5px; }
+        
+        /* STYLING UNTUK RACK EQ */
+        .eq-title { font-size: 14px; font-weight: bold; color: #ffaa00; margin-bottom: 5px; margin-top: 15px;}
+        .eq-rack {
+            display: flex;
+            overflow-x: auto;
+            gap: 15px;
+            padding: 20px 10px;
+            background: #111;
+            border-radius: 6px;
+            border: 2px solid #333;
+            margin-bottom: 20px;
+        }
+        .eq-band {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-width: 40px;
+        }
+        .eq-band span {
+            font-size: 10px;
+            color: #aaa;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+        .eq-val {
+            font-size: 10px;
+            color: #ff4444;
+            margin-top: 10px;
+        }
+        input[type=range].vertical-slider {
+            -webkit-appearance: slider-vertical;
+            appearance: slider-vertical;
+            width: 20px;
+            height: 150px;
+            cursor: pointer;
+            accent-color: #00C851;
+        }
+        
+        input[type="range"].horizontal { width: 100%; cursor: pointer; accent-color: #ff0000; }
+        .status { color: #aaa; margin-top: 10px; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h2>Dual-Channel EQ Proxy</h2>
+        <div>
+            <input type="text" id="urlInput" placeholder="Paste URL YouTube...">
+            <button onclick="initProxy()">Load Video</button>
+        </div>
+        <div id="statusMessage" class="status">Menunggu URL...</div>
+    </div>
+
+    <video id="mainPlayer" crossorigin="anonymous"></video>
+
+    <div class="mixer" id="mixerPanel">
+        <h3>🎛️ Dual 30-Band Graphic Equalizer</h3>
+        
+        <div class="eq-title">CH 1: LEFT (Kiri)</div>
+        <div class="eq-rack" id="eqContainerL"></div>
+
+        <div class="eq-title">CH 2: RIGHT (Kanan)</div>
+        <div class="eq-rack" id="eqContainerR"></div>
+
+        <h3 style="margin-top: 30px; color: #ff0000;">🎸 Pedalboard Efek</h3>
+        
+        <div class="track">
+            <label><span>Delay L (Kiri)</span> <span id="valDelayL">0 ms</span></label>
+            <input type="range" class="horizontal" id="slDelayL" min="0" max="50" value="0">
+            
+            <label style="margin-top:10px;"><span>Delay R (Kanan)</span> <span id="valDelayR">0 ms</span></label>
+            <input type="range" class="horizontal" id="slDelayR" min="0" max="50" value="0">
+        </div>
+        
+        <div class="track">
+            <label><span>Distortion (Fuzz)</span> <span id="valDist">0 %</span></label>
+            <input type="range" class="horizontal" id="slDist" min="0" max="100" value="0">
+        </div>
+
+        <div class="track">
+            <label><span>Panning (L-R Hard Mute)</span> <span id="valPan">Tengah</span></label>
+            <input type="range" class="horizontal" id="slPan" min="-1" max="1" step="0.1" value="0">
+        </div>
+
+        <div class="track">
+            <label><span>Echo Feedback (Mantul)</span> <span id="valDelay">0 %</span></label>
+            <input type="range" class="horizontal" id="slDelay" min="0" max="80" value="0">
+        </div>
+    </div>
+
+    <script>
+        let cachedDirectUrl = "";
+        let audioCtx, sourceNode, distortionNode, echoDelayNode, feedbackGain, wetGain;
+        let splitter, merger, haasDelayL, haasDelayR, gainL, gainR;
+        let isAudioSetup = false;
+
+        const eqFrequencies = [
+            25, 31, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500, 630, 
+            800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300, 8000, 10000, 12500, 16000, 20000
+        ];
+        
+        // Sekarang kita punya DUA rak filter terpisah
+        let eqNodesL = []; 
+        let eqNodesR = []; 
+
+        const player = document.getElementById('mainPlayer');
+        const statusDiv = document.getElementById('statusMessage');
+        const mixerPanel = document.getElementById('mixerPanel');
+
+        // BIKIN 60 SLIDER SECARA OTOMATIS (30 KIRI, 30 KANAN)
+        function buildDualEQInterface() {
+            const eqContainerL = document.getElementById('eqContainerL');
+            const eqContainerR = document.getElementById('eqContainerR');
+            let htmlL = ""; let htmlR = "";
+
+            eqFrequencies.forEach((freq, index) => {
+                let label = freq >= 1000 ? (freq/1000).toString().replace('.', 'k') + (freq%1000==0?'k':'') : freq;
+                if(freq == 1250) label = "1.2k"; if(freq == 1600) label = "1.6k"; if(freq == 2500) label = "2.5k";
+                if(freq == 3150) label = "3.1k"; if(freq == 6300) label = "6.3k"; if(freq == 12500) label = "12.5k";
+
+                // Build HTML Kiri
+                htmlL += `
+                    <div class="eq-band">
+                        <span>${label}</span>
+                        <input type="range" class="vertical-slider" id="eq_slider_L_${index}" min="-15" max="15" value="0" step="1">
+                        <div class="eq-val" id="eq_val_L_${index}">0 dB</div>
+                    </div>`;
+                    
+                // Build HTML Kanan
+                htmlR += `
+                    <div class="eq-band">
+                        <span>${label}</span>
+                        <input type="range" class="vertical-slider" id="eq_slider_R_${index}" min="-15" max="15" value="0" step="1">
+                        <div class="eq-val" id="eq_val_R_${index}">0 dB</div>
+                    </div>`;
+            });
+
+            eqContainerL.innerHTML = htmlL;
+            eqContainerR.innerHTML = htmlR;
+
+            // Pasang Event Listenernya
+            eqFrequencies.forEach((freq, index) => {
+                // Listener Kiri
+                document.getElementById(`eq_slider_L_${index}`).addEventListener('input', (e) => {
+                    let dbValue = e.target.value;
+                    document.getElementById(`eq_val_L_${index}`).innerText = (dbValue > 0 ? "+" : "") + dbValue + " dB";
+                    if (isAudioSetup && eqNodesL[index]) eqNodesL[index].gain.value = dbValue;
+                });
+                
+                // Listener Kanan
+                document.getElementById(`eq_slider_R_${index}`).addEventListener('input', (e) => {
+                    let dbValue = e.target.value;
+                    document.getElementById(`eq_val_R_${index}`).innerText = (dbValue > 0 ? "+" : "") + dbValue + " dB";
+                    if (isAudioSetup && eqNodesR[index]) eqNodesR[index].gain.value = dbValue;
+                });
+            });
+        }
+        buildDualEQInterface();
+
+        function initProxy() {
+            const ytUrl = document.getElementById('urlInput').value.trim();
+            if (!ytUrl) return;
+
+            statusDiv.innerText = "Mengekstrak URL...";
+            fetch('http://localhost:4000/get-direct-url', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: ytUrl })
+            })
+            .then(res => res.json())
+            .then(data => {
+                cachedDirectUrl = data.directUrl;
+                playStream();
+            })
+            .catch(err => statusDiv.innerText = "Gagal ekstrak URL!");
+        }
+
+        function playStream() {
+            player.src = `http://localhost:4000/stream-video?url=${encodeURIComponent(cachedDirectUrl)}`;
+            player.style.display = "block";
+            player.controls = true; 
+            player.play();
+        }
+
+        player.oncanplay = () => {
+            statusDiv.innerText = "Video siap! Geser slider EQ untuk memoles frekuensi.";
+            mixerPanel.style.display = "block";
+            if (!isAudioSetup) { setupWebAudio(); isAudioSetup = true; }
+        };
+
+        // -----------------------------------------------------
+        // DAPUR AUDIO: PEMISAHAN & PERAKITAN 60 KABEL FILTER
+        // -----------------------------------------------------
+        function setupWebAudio() {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            sourceNode = audioCtx.createMediaElementSource(player);
+            
+            splitter = audioCtx.createChannelSplitter(2);
+            merger = audioCtx.createChannelMerger(2);
+            haasDelayL = audioCtx.createDelay(); haasDelayR = audioCtx.createDelay();
+            gainL = audioCtx.createGain(); gainR = audioCtx.createGain();
+
+            // BIKIN 30 FILTER UNTUK KIRI
+            eqNodesL = eqFrequencies.map((freq, index) => {
+                let filter = audioCtx.createBiquadFilter();
+                filter.type = (index === 0) ? "lowshelf" : (index === eqFrequencies.length - 1) ? "highshelf" : "peaking";
+                filter.frequency.value = freq;
+                filter.gain.value = document.getElementById(`eq_slider_L_${index}`).value; 
+                if(filter.type === "peaking") filter.Q.value = 4.31;
+                return filter;
+            });
+
+            // BIKIN 30 FILTER UNTUK KANAN
+            eqNodesR = eqFrequencies.map((freq, index) => {
+                let filter = audioCtx.createBiquadFilter();
+                filter.type = (index === 0) ? "lowshelf" : (index === eqFrequencies.length - 1) ? "highshelf" : "peaking";
+                filter.frequency.value = freq;
+                filter.gain.value = document.getElementById(`eq_slider_R_${index}`).value; 
+                if(filter.type === "peaking") filter.Q.value = 4.31;
+                return filter;
+            });
+
+            distortionNode = audioCtx.createWaveShaper(); distortionNode.curve = makeDistortionCurve(0);
+            echoDelayNode = audioCtx.createDelay(2.0); feedbackGain = audioCtx.createGain(); wetGain = audioCtx.createGain();
+            feedbackGain.gain.value = 0; wetGain.gain.value = 0;
+
+            // --- ROUTING KABEL TERPISAH (DUAL MONO) ---
+            
+            sourceNode.connect(splitter);
+            
+            // JALUR 1 (KIRI) : Splitter -> Haas -> Gain -> [EQ L 1...30] -> Merger (Input Kiri)
+            splitter.connect(haasDelayL, 0); 
+            haasDelayL.connect(gainL); 
+            gainL.connect(eqNodesL[0]);
+            for(let i = 0; i < eqNodesL.length - 1; i++) {
+                eqNodesL[i].connect(eqNodesL[i+1]);
+            }
+            eqNodesL[eqNodesL.length - 1].connect(merger, 0, 0); 
+            
+            // JALUR 2 (KANAN) : Splitter -> Haas -> Gain -> [EQ R 1...30] -> Merger (Input Kanan)
+            splitter.connect(haasDelayR, 1); 
+            haasDelayR.connect(gainR); 
+            gainR.connect(eqNodesR[0]);
+            for(let i = 0; i < eqNodesR.length - 1; i++) {
+                eqNodesR[i].connect(eqNodesR[i+1]);
+            }
+            eqNodesR[eqNodesR.length - 1].connect(merger, 0, 1);
+
+            // JALUR GABUNGAN
+            merger.connect(distortionNode);
+            distortionNode.connect(audioCtx.destination);
+            
+            // JALUR ECHO
+            distortionNode.connect(echoDelayNode); 
+            echoDelayNode.connect(feedbackGain); 
+            feedbackGain.connect(echoDelayNode);
+            echoDelayNode.connect(wetGain); 
+            wetGain.connect(audioCtx.destination);
+        }
+
+        function makeDistortionCurve(amount) {
+            let k = amount, n = 44100, curve = new Float32Array(n), deg = Math.PI/180;
+            for (let i = 0; i < n; ++i) {
+                let x = i * 2 / n - 1;
+                curve[i] = (3 + k) * x * 20 * deg / (Math.PI + k * Math.abs(x));
+            }
+            return curve;
+        }
+
+        document.getElementById('slDelayL').addEventListener('input', (e) => { haasDelayL.delayTime.value = e.target.value/1000; document.getElementById('valDelayL').innerText = e.target.value + " ms"; });
+        document.getElementById('slDelayR').addEventListener('input', (e) => { haasDelayR.delayTime.value = e.target.value/1000; document.getElementById('valDelayR').innerText = e.target.value + " ms"; });
+        document.getElementById('slDist').addEventListener('input', (e) => { distortionNode.curve = makeDistortionCurve(e.target.value * 4); document.getElementById('valDist').innerText = e.target.value + " %"; });
+        document.getElementById('slPan').addEventListener('input', (e) => {
+            let val = parseFloat(e.target.value);
+            gainL.gain.value = Math.min(1, 1 - val); gainR.gain.value = Math.min(1, 1 + val);
+            document.getElementById('valPan').innerText = val === 0 ? "Tengah" : (val < 0 ? "Kiri" : "Kanan");
+        });
+        document.getElementById('slDelay').addEventListener('input', (e) => {
+            feedbackGain.gain.value = e.target.value / 100;
+            wetGain.gain.value = e.target.value == 0 ? 0 : (e.target.value / 100) + 0.2;
+            document.getElementById('valDelay').innerText = e.target.value + " %";
+        });
+    </script>
+</body>
+</html>

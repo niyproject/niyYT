@@ -1,0 +1,138 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { 
+    font-family: system-ui, sans-serif; 
+    background: #121212; 
+    color: #fff; 
+    padding-top: 60px; /* Jarak untuk top nav */
+    padding-bottom: 70px; /* Jarak untuk bottom nav */
+}
+
+/* TOP NAV */
+.top-nav {
+    position: fixed; top: 0; left: 0; right: 0; height: 60px;
+    background: #0f0f0f; border-bottom: 1px solid #333;
+    display: flex; align-items: center; padding: 0 15px; z-index: 100;
+}
+.logo-box { background: #ff0000; padding: 8px 12px; border-radius: 8px; margin-right: 15px; }
+.search-box { display: flex; flex: 1; background: #fff; border-radius: 20px; overflow: hidden; }
+.search-box input { flex: 1; padding: 10px 15px; border: none; outline: none; color: #000; }
+.search-btn { background: #f0f0f0; border: none; padding: 0 15px; cursor: pointer; }
+
+/* BOTTOM NAV */
+.bottom-nav {
+    position: fixed; bottom: 0; left: 0; right: 0; height: 60px;
+    background: #0f0f0f; border-top: 1px solid #333;
+    display: flex; justify-content: space-around; align-items: center; z-index: 100;
+}
+.nav-item {
+    background: none; border: none; color: #888; display: flex; flex-direction: column; 
+    align-items: center; cursor: pointer; font-size: 12px; width: 50%;
+}
+.nav-item.active { color: #ff0000; }
+.nav-icon { font-size: 20px; margin-bottom: 4px; }
+
+/* TAB SYSTEM */
+.tab-section { display: none; padding: 15px; }
+.tab-section.active { display: block; }
+.status-text { color: #aaa; text-align: center; margin-top: 20px; }
+
+/* SEARCH RESULTS CARDS */
+.results-grid { display: flex; flex-direction: column; gap: 15px; margin-top: 15px; }
+.video-card {
+    background: #1e1e1e; border-radius: 8px; overflow: hidden; display: flex;
+    flex-direction: column; cursor: pointer; border: 1px solid #333; transition: 0.2s;
+}
+.video-card:active { transform: scale(0.98); }
+.video-thumb { width: 100%; height: 200px; object-fit: cover; background: #000; }
+.video-info { padding: 15px; }
+.video-title { font-size: 14px; font-weight: bold; margin-bottom: 5px; line-height: 1.4; }
+.video-author { font-size: 12px; color: #aaa; }
+
+/* STYLING TRACK EFEK PEDALBOARD */
+.track { 
+    margin-bottom: 15px; 
+    background: #1a1a1a; 
+    padding: 15px; 
+    border-radius: 6px;
+    border: 1px solid #333;
+}
+.track label { 
+    display: flex; 
+    justify-content: space-between; 
+    font-size: 14px; 
+    color: #00C851; 
+    font-weight: bold; 
+    margin-bottom: 5px; 
+}
+input[type="range"].horizontal { 
+    width: 100%; 
+    cursor: pointer; 
+    accent-color: #ff0000; 
+    margin-top: 5px;
+}
+
+/* Update Font Body */
+body { 
+    font-family: 'Poppins', system-ui, sans-serif; /* Pindah ke Poppins */
+    background: #121212; 
+    color: #fff; 
+    padding-top: 60px; 
+    padding-bottom: 70px; 
+}
+
+/* Styling untuk Logo di Top Nav */
+.logo-box { 
+    /* Hapus background merah yang lama kalau lu mau logo PNG-nya nyatu sama background item */
+    /* background: #ff0000; */ 
+    padding: 5px; 
+    margin-right: 15px; 
+    display: flex;
+    align-items: center;
+}
+.custom-logo {
+    width: 32px;  /* Sesuaikan lebarnya bung */
+    height: 32px; /* Sesuaikan tingginya */
+    object-fit: contain; /* Biar rasio 3x2 lu gak penyok */
+}
+
+/* Styling untuk Icon di Bottom Nav */
+.custom-nav-icon {
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
+    margin-bottom: 4px;
+    
+    /* Trik keren: Bikin iconnya abu-abu saat gak aktif */
+    filter: grayscale(100%) opacity(0.6);
+    transition: 0.3s ease;
+}
+
+/* Kalau tombolnya lagi active, iconnya balik ke warna asli (full color) */
+.nav-item.active .custom-nav-icon { 
+    filter: none; 
+}
+
+/* Update font tombol search biar ikon loop 🔍 sejajar */
+.search-btn { 
+    background: #f0f0f0; 
+    border: none; 
+    padding: 0 15px; 
+    cursor: pointer; 
+    font-family: inherit;
+}
+
+/* Wadah logonya kita bikin transparan, gak ada background merah lagi */
+.logo-box { 
+    background: transparent; /* Pastikan ini transparan! */
+    padding: 0; /* Kurangi padding biar gak makan tempat */
+    margin-right: 15px; 
+    display: flex;
+    align-items: center;
+}
+
+/* Gambar logonya kita sesuaikan ke rasio 3:2 */
+.custom-logo {
+    width: 48px;  /* Lebarnya kita besarin (rasio 3) */
+    height: 32px; /* Tingginya tetap (rasio 2) */
+    object-fit: contain;
+}

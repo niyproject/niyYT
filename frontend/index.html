@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YT Audio Mixer</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+
+    <header class="top-nav">
+        <div class="logo-box">
+            <img src="/logo.png" alt="Logo" class="custom-logo">
+        </div>
+        <form id="searchForm" class="search-box">
+            <input type="text" id="searchInput" placeholder="Cari video YouTube...">
+            <button type="submit" class="search-btn">🔍</button>
+        </form>
+    </header>
+
+    <div id="video-card-container"></div>
+
+    <main class="main-content">
+        
+        <div id="tab-search" class="tab-section active">
+            <div id="search-status" class="status-text">Ketik judul lagu di atas untuk mencari...</div>
+            <div id="search-results" class="results-grid"></div>
+        </div>
+
+        <div id="tab-mixer" class="tab-section">
+            <div id="eq-container"></div>
+            <div id="delay-pedal-container"></div>
+            <div id="distortion-container"></div>
+            <div id="panning-container"></div>
+            <div id="echo-delay-container"></div>
+        </div>
+
+    </main>
+
+    <nav class="bottom-nav">
+        <button class="nav-item active" id="btn-nav-search">
+            <img src="/icon-yt.png" alt="YT" class="custom-nav-icon">
+            <span>YouTube</span>
+        </button>
+        <button class="nav-item" id="btn-nav-mixer">
+            <img src="/icon-mixer.png" alt="Mixer" class="custom-nav-icon">
+            <span>Mixer</span>
+        </button>
+    </nav>
+
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>
