@@ -1,36 +1,17 @@
 import './VideoCard.css';
 import { fetchDirectUrl } from '../../api/youtube';
 
-// Penampung handler di luar scope fungsi agar mudah dibersihkan
+// Penampung handler di luar scope fungsi agar mudah dibersihkan 
 // untuk mencegah memory leak saat komponen di-render ulang
-let playUrlHandler = null;
+let playUrlHandler = null; 
 
 export function renderVideoCard(containerId, onVideoReady) {
     const container = document.getElementById(containerId);
 
-    // ==========================================
-    // UPDATE HTML: Wadah Video & Overlay Loading
-    // ==========================================
     container.innerHTML = `
         <div class="video-container" id="vidContainer" style="display:none; padding: 15px;">
             <div id="statusMessage" class="status" style="margin-bottom:10px; font-size: 13px; color: #aaa;"></div>
-
-            <div id="playerWrapper" style="position: relative; width: 100%; border-radius: 8px; overflow: hidden; background: #000; aspect-ratio: 16/9;">
-                <video id="mainPlayer" crossorigin="anonymous" playsinline style="width:100%; height: 100%; display: block;"></video>
-
-                <div id="thumbOverlay" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; background-color: #000; cursor: pointer;">
-                    <img id="overlayImage" src="" style="width: 100%; height: 100%; object-fit: cover; opacity: 0.5;">
-
-                    <div id="overlaySpinner" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); display: none;">
-                        <div class="loading-spinner"></div>
-                    </div>
-
-                    <div id="overlayStandbyPlay" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 60px; color: rgba(255,0,0,0.8); display: none; text-shadow: 0px 0px 10px black;">
-                        ▶
-                    </div>
-                </div>
-            </div>
-
+            <video id="mainPlayer" crossorigin="anonymous" playsinline style="width:100%; border-radius:8px; background: #000;"></video>
             <div class="video-controls" style="margin-top:10px; display:flex; justify-content:flex-end; gap:10px;">
                 <button class="btn-control" id="btnPip" style="background:#ff0000; border:none; padding:8px 12px; color:#fff; border-radius:4px; font-weight:bold; cursor:pointer;">Melayang (PiP)</button>
                 <button class="btn-control" id="btnFullscreen" style="background:#ff0000; border:none; padding:8px 12px; color:#fff; border-radius:4px; font-weight:bold; cursor:pointer;">Layar Penuh</button>
@@ -41,47 +22,13 @@ export function renderVideoCard(containerId, onVideoReady) {
     const statusMessage = document.getElementById('statusMessage');
     const vidContainer = document.getElementById('vidContainer');
     const player = document.getElementById('mainPlayer');
-    const thumbOverlay = document.getElementById('thumbOverlay');
-    const overlayImage = document.getElementById('overlayImage');
-    const overlaySpinner = document.getElementById('overlaySpinner');
-    const overlayStandbyPlay = document.getElementById('overlayStandbyPlay');
 
     // ==========================================
     // VARIABLE INTERNAL (STATE)
     // ==========================================
-    let stallTimer = null;
-    let activeStreamUrl = null;
-    let pendingResumeHandler = null;
-
-    // ==========================================
-    // FUNGSI PENGENDALI LAYAR OVERLAY (DIPINDAH KE ATAS)
-    // ==========================================
-    const showOverlay = (mode, thumbUrl) => {
-        if(thumbUrl) {
-            overlayImage.src = thumbUrl;
-            localStorage.setItem('yt_cached_thumb', thumbUrl);
-        } else {
-            overlayImage.src = localStorage.getItem('yt_cached_thumb') || '';
-        }
-
-        thumbOverlay.style.display = 'block';
-
-        if (mode === 'standby') {
-            overlayImage.style.filter = 'none'; 
-            overlaySpinner.style.display = 'none';
-            overlayStandbyPlay.style.display = 'block'; 
-        } else {
-            overlayImage.style.filter = 'blur(2px)'; 
-            overlaySpinner.style.display = 'block'; 
-            overlayStandbyPlay.style.display = 'none';
-        }
-    };
-
-    const hideOverlay = () => {
-        thumbOverlay.style.display = 'none';
-        overlayStandbyPlay.style.display = 'none';
-        overlaySpinner.style.display = 'none';
-    };
+    let stallTimer = null;    
+    let activeStreamUrl = null; 
+    let pendingResumeHandler = null; // Menampung antrean pemulihan data
 
     // ==========================================
     // FUNGSI UTAMA LOAD VIDEO
@@ -109,12 +56,10 @@ export function renderVideoCard(containerId, onVideoReady) {
                 clearStallDetector();
             } catch (e) {
                 statusMessage.innerText = "Siap! Klik tombol Play.";
-                hideOverlay();
             }
 
         } catch (err) {
             statusMessage.innerText = "Gagal memuat video! YouTube memblokir akses.";
-            hideOverlay();
         }
     };
 
@@ -132,12 +77,13 @@ export function renderVideoCard(containerId, onVideoReady) {
 
                 player.pause();
                 player.removeAttribute('src');
-                player.src = ''; 
+                player.src = ''; // Mengosongkan buffer memori secara paksa
                 player.load();
 
                 player.src = activeStreamUrl;
-                player.load();
+                player.load(); 
 
+                // Hapus eksekusi pemulihan yang menggantung (mencegah bentrok)
                 if (pendingResumeHandler) {
                     player.removeEventListener('loadedmetadata', pendingResumeHandler);
                 }
@@ -146,7 +92,6 @@ export function renderVideoCard(containerId, onVideoReady) {
                     player.currentTime = lastTime;
                     player.play().catch(() => {
                         statusMessage.innerText = "Stream siap! Ketuk layar atau tombol Play untuk lanjut 🎵";
-                        hideOverlay();
                     });
 
                     player.removeEventListener('loadedmetadata', pendingResumeHandler);
@@ -165,61 +110,31 @@ export function renderVideoCard(containerId, onVideoReady) {
         }
     };
 
-    // ==========================================
-    // EVENT LISTENER PLAYER (MATA-MATA STATUS)
-    // ==========================================
-    player.addEventListener('waiting', () => {
-        startStallDetector();
-    });
-
-    player.addEventListener('playing', () => {
-        hideOverlay();
-        clearStallDetector();
-    });
-
-    player.addEventListener('stalled', () => {
-        startStallDetector();
-    });
+    player.addEventListener('waiting', startStallDetector);
+    player.addEventListener('playing', clearStallDetector);
+    player.addEventListener('stalled', startStallDetector); 
 
     player.addEventListener('timeupdate', () => {
         if (player.currentTime > 0 && player.readyState >= 2 && !player.paused) {
-            clearStallDetector();
+            clearStallDetector(); 
             localStorage.setItem('yt_saved_time', player.currentTime);
         }
     });
 
-    player.oncanplay = () => {
-        statusMessage.innerText = "Now Playing 🎵";
-        hideOverlay();
-        onVideoReady(player);
-    };
-
     // ==========================================
-    // LOGIKA PERGANTIAN VIDEO & KLIK OVERLAY
+    // LOGIKA PERGANTIAN VIDEO
     // ==========================================
     
-    // Perluas area klik ke seluruh area proksi gambar thumbnail
-    thumbOverlay.addEventListener('click', () => {
-        if (overlayStandbyPlay.style.display !== 'none') {
-            const savedUrl = localStorage.getItem('yt_cached_url');
-            if (savedUrl) {
-                showOverlay('loading'); 
-                loadAndPlayVideo(savedUrl); 
-            }
-        }
-    });
-
+    // Mencegah memory leak dengan menimpa listener lama
     if (playUrlHandler) {
         document.removeEventListener('app:play-url', playUrlHandler);
     }
 
     playUrlHandler = (e) => {
         const url = e.detail.url;
-        const thumb = e.detail.thumbnail;
         if (!url) return;
 
-        showOverlay('loading', thumb);
-
+        // Bersihkan sisa lag dari video sebelumnya
         clearStallDetector();
         if (pendingResumeHandler) {
             player.removeEventListener('loadedmetadata', pendingResumeHandler);
@@ -228,10 +143,11 @@ export function renderVideoCard(containerId, onVideoReady) {
 
         if (url !== localStorage.getItem('yt_cached_url')) {
             localStorage.setItem('yt_saved_time', '0');
+
             player.pause();
             player.currentTime = 0;
             player.removeAttribute('src');
-            player.src = '';
+            player.src = ''; // Force garbage collection
             player.load();
         }
 
@@ -241,14 +157,14 @@ export function renderVideoCard(containerId, onVideoReady) {
 
     document.addEventListener('app:play-url', playUrlHandler);
 
-    // ==========================================
-    // LAZY LOAD SAAT REFRESH
-    // ==========================================
+    // AUTO LOAD SAAT REFRESH
     const savedUrl = localStorage.getItem('yt_cached_url');
-    if (savedUrl) {
-        vidContainer.style.display = "block"; // Munculkan container utama
-        showOverlay('standby'); // Tampilkan status gambar dan tombol play raksasa
-    }
+    if (savedUrl) loadAndPlayVideo(savedUrl);
+
+    player.oncanplay = () => {
+        statusMessage.innerText = "Now Playing 🎵";
+        onVideoReady(player);
+    };
 
     // ==========================================
     // UTILITY UI (PIP & FULLSCREEN)
@@ -265,28 +181,5 @@ export function renderVideoCard(containerId, onVideoReady) {
             if (document.fullscreenElement) await document.exitFullscreen();
             else await vidContainer.requestFullscreen();
         } catch (e) { console.error("FS Error", e); }
-    });
-
-   // ==========================================
-    // DETEKSI MODE PiP (PICTURE-IN-PICTURE)
-    // ==========================================
-    player.addEventListener('enterpictureinpicture', () => {
-        // Saat PiP terbuka, kempeskan container biar layar pencarian luas
-        vidContainer.classList.add('is-pip');
-    });
-
-    player.addEventListener('leavepictureinpicture', () => {
-        // Saat PiP ditutup, kembalikan ukuran container
-        vidContainer.classList.remove('is-pip');
-
-        // 💡 Kasih delay 150ms biar ngasih waktu browser selesai nge-pause,
-        // baru kita paksa play lagi setelahnya.
-        setTimeout(() => {
-            if (player.paused) {
-                player.play().catch(err => {
-                    console.log("Sistem mencegah auto-play saat keluar PiP", err);
-                });
-            }
-        }, 150); // 150 milidetik biasanya udah lebih dari cukup
     });
 }

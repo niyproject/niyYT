@@ -136,3 +136,100 @@ body {
     height: 32px; /* Tingginya tetap (rasio 2) */
     object-fit: contain;
 }
+
+/* ==========================================
+   WADAH THUMBNAIL & LOGO PLAY
+   ========================================== */
+.thumb-wrapper {
+    position: relative;
+    display: inline-block; 
+    flex-shrink: 0; 
+}
+
+/* Desain Logo Play Default (Tersembunyi) */
+.play-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: rgba(255, 0, 0, 0.6); /* Warna merah transparan ala YT */
+    color: white;
+    font-size: 60px;
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding-left: 10px; 
+    opacity: 0; /* Sembunyikan di awal */
+    transition: opacity 0.3s ease;
+    z-index: 2;
+}
+
+/* ==========================================
+   STATUS PLAYING (MONOKROM, DISABLED, & MUNCUL PLAY)
+   ========================================== */
+.video-card.playing-now {
+    pointer-events: none; /* Mematikan klik total */
+    cursor: not-allowed;
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid #555; /* Border redup dipindah ke sini */
+}
+
+/* Bikin gambarnya aja yang monokrom, biar icon play tetep merah merona */
+.video-card.playing-now .video-thumb {
+    filter: grayscale(90%);
+    opacity: 0.5;
+}
+
+/* Munculkan logo play saat status playing */
+.video-card.playing-now .play-overlay {
+    opacity: 1;
+}
+
+
+/* ==========================================
+   LOADING SPINNER UNTUK VIDEO
+   ========================================== */
+.loading-spinner {
+    width: 50px;
+    height: 50px;
+    border: 5px solid rgba(255, 255, 255, 0.3);
+    border-top-color: #ff0000; /* Merah YouTube */
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* ==========================================
+   STICKY VIDEO PLAYER (KAYAK YOUTUBE ASLI)
+   ========================================== */
+#video-card-container {
+    position: sticky;
+    top: 60px; /* Ngunci di paling atas layar pas di-scroll */
+    z-index: 100; /* Kasta paling tinggi biar selalu di atas hasil pencarian */
+    
+    /* 💡 WAJIB ADA BACKGROUND */
+    /* Sesuaikan dengan warna background web lu (misal hitam atau gelap) */
+    /* Kalau gak dikasih background, teks pencarian di bawahnya bakal nembus/transparan */
+    background-color: #121212; 
+    
+    /* Opsional: Biar transisinya mulus dan rapi kasih sedikit bayangan ke bawah */
+    box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.5);
+}
+
+/* ==========================================
+   MODE PiP AKTIF (KEMPESKAN CONTAINER)
+   ========================================== */
+.video-container.is-pip {
+    height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    opacity: 0 !important;
+    border: none !important;
+}

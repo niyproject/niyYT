@@ -31,67 +31,131 @@ btnNavMixer.addEventListener('click', () => {
 });
 
 // ==========================================
-// LOGIKA PENCARIAN (TOP NAV)
+// LOGIKA PENCARIAN (TOP NAV) & SESSION CACHE
 // ==========================================
 const searchForm = document.getElementById('searchForm');
 const searchInput = document.getElementById('searchInput');
 const searchResults = document.getElementById('search-results');
 const searchStatus = document.getElementById('search-status');
 
+// 💡 FUNGSI RENDER DIPISAH BIAR BISA DIPANGGIL ULANG OLEH CACHE
+const renderVideoList = (videos) => {
+    searchResults.innerHTML = "";
+    searchStatus.innerText = videos.length === 0 ? "Tidak ada hasil ditemukan." : "";
+    
+    const currentPlayingUrl = localStorage.getItem('yt_cached_url');
+
+    videos.forEach(video => {
+        const card = document.createElement('div');
+        card.className = 'video-card';
+        card.dataset.url = video.url; 
+
+        if (video.url === currentPlayingUrl) {
+            card.classList.add('playing-now');
+        }
+
+        card.innerHTML = `
+            <div class="thumb-wrapper">
+                <img src="${video.image || video.thumbnail}" class="video-thumb" alt="Thumbnail">
+                <div class="play-overlay">▶</div>
+            </div>
+            <div class="video-info">
+                <div class="video-title">${video.title}</div>
+                <div class="video-author">${video.author.name} • ${video.timestamp}</div>
+            </div>
+        `;
+
+        card.addEventListener('click', () => {
+            document.dispatchEvent(new CustomEvent('app:play-url', {
+                detail: { 
+                    url: video.url, 
+                    thumbnail: video.image || video.thumbnail 
+                }
+            }));
+        });
+
+        searchResults.appendChild(card);
+    });
+};
+
 searchForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const keyword = searchInput.value.trim();
     if (!keyword) return;
 
-    // DETEKSI: Apakah input ini berupa link YouTube?
     const isLink = keyword.includes('youtube.com/') || keyword.includes('youtu.be/');
 
     if (isLink) {
-        // Kalau link, langsung suruh video card nge-play!
         searchStatus.innerText = "Memuat video dari link...";
-        searchResults.innerHTML = ""; // Kosongkan area bawah
+        searchResults.innerHTML = ""; 
         
-        document.dispatchEvent(new CustomEvent('app:play-url', { 
-            detail: { url: keyword } 
+        let videoId = "";
+        if(keyword.includes('youtu.be/')) {
+            videoId = keyword.split('youtu.be/')[1].split('?')[0];
+        } else if (keyword.includes('youtube.com/watch')) {
+            videoId = new URLSearchParams(keyword.split('?')[1]).get('v');
+        }
+        const thumbUrl = videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : '';
+
+        document.dispatchEvent(new CustomEvent('app:play-url', {
+            detail: { url: keyword, thumbnail: thumbUrl } 
         }));
-        return; // Hentikan eksekusi di sini, gak usah lanjut nyari ke backend
+        return; 
     }
 
-    // ==========================================
-    // Kalau bukan link, berarti nyari pakai kata kunci
-    // ==========================================
     searchStatus.innerText = "Mencari...";
-    searchResults.innerHTML = ""; 
+    searchResults.innerHTML = "";
 
     try {
         const response = await fetch(`/search?q=${encodeURIComponent(keyword)}`);
         const videos = await response.json();
         
-        searchStatus.innerText = videos.length === 0 ? "Tidak ada hasil ditemukan." : "";
-        
-        videos.forEach(video => {
-            const card = document.createElement('div');
-            card.className = 'video-card';
-            card.innerHTML = `
-                <img src="${video.image || video.thumbnail}" class="video-thumb" alt="Thumbnail">
-                <div class="video-info">
-                    <div class="video-title">${video.title}</div>
-                    <div class="video-author">${video.author.name} • ${video.timestamp}</div>
-                </div>
-            `;
-            
-            card.addEventListener('click', () => {
-                document.dispatchEvent(new CustomEvent('app:play-url', { 
-                    detail: { url: video.url } 
-                }));
-            });
-            
-            searchResults.appendChild(card);
-        });
+        // 💡 SIMPAN HASIL KE SESSION STORAGE SEBELUM RENDER
+        sessionStorage.setItem('yt_last_search_keyword', keyword);
+        sessionStorage.setItem('yt_last_search_results', JSON.stringify(videos));
+
+        renderVideoList(videos);
     } catch (err) {
         searchStatus.innerText = "Gagal mengambil data pencarian dari server.";
     }
 });
+
+// 💡 AUTO LOAD HASIL PENCARIAN SAAT REFRESH
+document.addEventListener('DOMContentLoaded', () => {
+    const savedKeyword = sessionStorage.getItem('yt_last_search_keyword');
+    const savedResults = sessionStorage.getItem('yt_last_search_results');
+
+    if (savedKeyword && savedResults) {
+        searchInput.value = savedKeyword; // Kembalikan teks di kotak input
+        try {
+            const videos = JSON.parse(savedResults);
+            renderVideoList(videos); // Render ulang list-nya
+        } catch (e) {
+            console.error("Gagal membaca cache pencarian");
+        }
+    }
+});
+
+
+// ==========================================
+// 💡 LOGIKA UPDATE UI SAAT VIDEO DIPUTAR
+// ==========================================
+document.addEventListener('app:play-url', (e) => {
+    const playedUrl = e.detail.url;
+    const allCards = document.querySelectorAll('.video-card');
+    
+    // Looping semua card di layar
+    allCards.forEach(card => {
+        if (card.dataset.url === playedUrl) {
+            // Kalau URL cocok, pasang efek monokrom & matikan klik
+            card.classList.add('playing-now');
+        } else {
+            // Kalau beda, bersihkan efek (buat video yang sebelumnya jalan)
+            card.classList.remove('playing-now');
+        }
+    });
+});
+
 
 renderVideoCard('video-card-container', (videoElement) => {
     
