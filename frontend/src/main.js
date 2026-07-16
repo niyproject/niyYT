@@ -42,13 +42,13 @@ const searchStatus = document.getElementById('search-status');
 const renderVideoList = (videos) => {
     searchResults.innerHTML = "";
     searchStatus.innerText = videos.length === 0 ? "Tidak ada hasil ditemukan." : "";
-    
+
     const currentPlayingUrl = localStorage.getItem('yt_cached_url');
 
     videos.forEach(video => {
         const card = document.createElement('div');
         card.className = 'video-card';
-        card.dataset.url = video.url; 
+        card.dataset.url = video.url;
 
         if (video.url === currentPlayingUrl) {
             card.classList.add('playing-now');
@@ -67,17 +67,129 @@ const renderVideoList = (videos) => {
 
         card.addEventListener('click', () => {
             document.dispatchEvent(new CustomEvent('app:play-url', {
-                detail: { 
-                    url: video.url, 
-                    thumbnail: video.image || video.thumbnail 
+                detail: {
+                    url: video.url,
+                    thumbnail: video.image || video.thumbnail
                 }
             }));
         });
 
         searchResults.appendChild(card);
     });
+
+    // ==========================================
+    // 💡 TAMBAHAN BARU: KOTAK PAGINASI BAWAH
+    // ==========================================
+    if (videos.length > 0) {
+        // Tarik data kita lagi di halaman berapa
+        const currentPage = parseInt(sessionStorage.getItem('yt_current_page')) || 1;
+        const lastKeyword = sessionStorage.getItem('yt_last_search_keyword') || "";
+
+        const paginationWrapper = document.createElement('div');
+        paginationWrapper.style.cssText = "display: flex; justify-content: center; align-items: center; gap: 20px; margin-top: 30px; padding-bottom: 30px;";
+
+        // 1. Tombol Prev Page
+        const btnPrev = document.createElement('button');
+        btnPrev.className = 'btn-control';
+        btnPrev.innerHTML = '<i class="fa-solid fa-chevron-left"></i> Prev Page';
+        
+        // Matikan tombol kalau udah di halaman 1
+        if (currentPage === 1) {
+            btnPrev.style.opacity = "0.4";
+            btnPrev.style.cursor = "not-allowed";
+        } else {
+            btnPrev.onclick = () => {
+                // Parameter ketiga 'false' biar ga langsung auto-play
+                executeSearch(lastKeyword, currentPage - 1, false);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            };
+        }
+
+        // 2. Teks Indikator Halaman
+        const pageText = document.createElement('span');
+        pageText.style.cssText = "color: #fff; font-size: 14px; font-weight: bold;";
+        pageText.innerText = `Page ${currentPage}`;
+
+        // 3. Tombol Next Page
+        const btnNext = document.createElement('button');
+        btnNext.className = 'btn-control';
+        btnNext.innerHTML = 'Next Page <i class="fa-solid fa-chevron-right"></i>';
+        btnNext.onclick = () => {
+            // Parameter ketiga 'false' biar ga langsung auto-play
+            executeSearch(lastKeyword, currentPage + 1, false);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        };
+
+        paginationWrapper.appendChild(btnPrev);
+        paginationWrapper.appendChild(pageText);
+        paginationWrapper.appendChild(btnNext);
+
+        searchResults.appendChild(paginationWrapper);
+    }
 };
 
+// ==========================================
+// 💡 MODIFIKASI FUNGSI PENCARIAN (MENDUKUNG MUNDUR HALAMAN)
+// ==========================================
+// Ubah parameter ketiga jadi autoPlayAction ('first', 'last', atau false)
+const executeSearch = async (keyword = "", page = 1, autoPlayAction = false) => {
+    searchStatus.innerText = `Memuat halaman ${page}...`;
+    searchResults.innerHTML = "";
+
+    // Tampilkan 5 kartu skeleton
+    for(let i = 0; i < 5; i++) {
+        searchResults.innerHTML += `
+            <div class="video-card skeleton-wrapper">
+                <div class="thumb-wrapper skeleton" style="width: 100%; aspect-ratio: 16/9; border-radius: 8px;"></div>
+                <div class="video-info" style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
+                    <div class="skeleton" style="width: 90%; height: 16px; border-radius: 4px;"></div>
+                    <div class="skeleton" style="width: 60%; height: 14px; border-radius: 4px;"></div>
+                </div>
+            </div>
+        `;
+    }
+
+    try {
+        const url = keyword
+            ? `/search?q=${encodeURIComponent(keyword)}&page=${page}`
+            : `/trending?page=${page}`;
+
+        const response = await fetch(url);
+        const videos = await response.json();
+
+        if (videos.length === 0) {
+            searchStatus.innerText = "Daftar putar sudah habis bung! 🎵";
+            searchResults.innerHTML = "";
+            return;
+        }
+
+        sessionStorage.setItem('yt_last_search_keyword', keyword);
+        sessionStorage.setItem('yt_last_search_results', JSON.stringify(videos));
+        sessionStorage.setItem('yt_current_page', page);
+
+        renderVideoList(videos);
+
+        // 💡 LOGIKA EKSEKUSI AUTO-PLAY (Pilih Atas atau Bawah)
+        if (autoPlayAction && videos.length > 0) {
+            setTimeout(() => {
+                const cards = searchResults.querySelectorAll('.video-card');
+                if (autoPlayAction === 'first' && cards.length > 0) {
+                    cards[0].click(); // Putar urutan paling atas
+                } else if (autoPlayAction === 'last' && cards.length > 0) {
+                    cards[cards.length - 1].click(); // Putar urutan paling bawah!
+                }
+            }, 800);
+        }
+    } catch (err) {
+        searchStatus.innerText = "Gagal mengambil data dari server.";
+        searchResults.innerHTML = "";
+    }
+};
+
+
+// ==========================================
+// EVENT LISTENER FORM PENCARIAN
+// ==========================================
 searchForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const keyword = searchInput.value.trim();
@@ -103,59 +215,115 @@ searchForm.addEventListener('submit', async (e) => {
         return; 
     }
 
-    searchStatus.innerText = "Mencari...";
-    searchResults.innerHTML = "";
-
-    try {
-        const response = await fetch(`/search?q=${encodeURIComponent(keyword)}`);
-        const videos = await response.json();
-        
-        // 💡 SIMPAN HASIL KE SESSION STORAGE SEBELUM RENDER
-        sessionStorage.setItem('yt_last_search_keyword', keyword);
-        sessionStorage.setItem('yt_last_search_results', JSON.stringify(videos));
-
-        renderVideoList(videos);
-    } catch (err) {
-        searchStatus.innerText = "Gagal mengambil data pencarian dari server.";
-    }
+    // Panggil fungsi eksekusi pencarian
+    executeSearch(keyword, 1);
 });
 
-// 💡 AUTO LOAD HASIL PENCARIAN SAAT REFRESH
+
+// ==========================================
+// AUTO LOAD & REKOMENDASI SAAT WEB DIBUKA
+// ==========================================
 document.addEventListener('DOMContentLoaded', () => {
     const savedKeyword = sessionStorage.getItem('yt_last_search_keyword');
     const savedResults = sessionStorage.getItem('yt_last_search_results');
 
-    if (savedKeyword && savedResults) {
-        searchInput.value = savedKeyword; // Kembalikan teks di kotak input
+    if (savedResults) {
+        // 1. Kalau ada cache (user habis refresh), render ulang dari memori
+        searchInput.value = savedKeyword || ""; 
         try {
             const videos = JSON.parse(savedResults);
-            renderVideoList(videos); // Render ulang list-nya
+            renderVideoList(videos); 
         } catch (e) {
-            console.error("Gagal membaca cache pencarian");
+            executeSearch("", 1); // Fallback ke trending murni
+        }
+    } else {
+        // 2. 💡 KALAU BARU MASUK & KOSONG, PANGGIL TRENDING MURNI!
+        // Panggil tanpa parameter biar executeSearch() nembak ke /trending
+        executeSearch("", 1); 
+    }
+});
+
+// ==========================================
+// 💡 LOGIKA UPDATE UI INSTAN SAAT LAGU DI-KLIK
+// ==========================================
+document.addEventListener('app:play-url', (e) => {
+    const playedUrl = e.detail.url;
+    const allCards = Array.from(document.querySelectorAll('.video-card'));
+
+    allCards.forEach(card => {
+        if (card.dataset.url === playedUrl) {
+            card.classList.add('playing-now');
+        } else {
+            card.classList.remove('playing-now');
+        }
+    });
+
+    // 💡 LOGIKA TOMBOL PREV ABU-ABU (DISABLED)
+    const btnPrev = document.getElementById('btnPrev');
+    if (btnPrev) {
+        const currentPage = parseInt(sessionStorage.getItem('yt_current_page')) || 1;
+        const playingIndex = allCards.findIndex(card => card.dataset.url === playedUrl);
+
+        // Kalau di Halaman 1 DAN lagunya urutan pertama (Index 0), matikan tombol Prev!
+        if (currentPage === 1 && playingIndex === 0) {
+            btnPrev.classList.add('disabled-btn');
+        } else {
+            // Selain itu, nyalakan lagi tombolnya
+            btnPrev.classList.remove('disabled-btn');
         }
     }
 });
 
 
 // ==========================================
-// 💡 LOGIKA UPDATE UI SAAT VIDEO DIPUTAR
+// 💡 LOGIKA AUTO PLAY NEXT / PAGINASI MAJU
 // ==========================================
-document.addEventListener('app:play-url', (e) => {
-    const playedUrl = e.detail.url;
-    const allCards = document.querySelectorAll('.video-card');
-    
-    // Looping semua card di layar
-    allCards.forEach(card => {
-        if (card.dataset.url === playedUrl) {
-            // Kalau URL cocok, pasang efek monokrom & matikan klik
-            card.classList.add('playing-now');
-        } else {
-            // Kalau beda, bersihkan efek (buat video yang sebelumnya jalan)
-            card.classList.remove('playing-now');
-        }
-    });
+document.addEventListener('app:play-next', () => {
+    const allCards = Array.from(document.querySelectorAll('.video-card'));
+    const currentUrl = localStorage.getItem('yt_cached_url');
+    const currentIndex = allCards.findIndex(card => card.dataset.url === currentUrl);
+
+    if (currentIndex !== -1 && currentIndex < allCards.length - 1) {
+        const nextCard = allCards[currentIndex + 1];
+        setTimeout(() => nextCard.click(), 1000);
+    } else if (currentIndex !== -1 && currentIndex === allCards.length - 1) {
+        console.log("Memuat halaman berikutnya...");
+        searchStatus.innerText = "Memuat kelanjutan daftar putar... 🔄";
+        
+        const lastKeyword = sessionStorage.getItem('yt_last_search_keyword') || "";
+        const currentPage = parseInt(sessionStorage.getItem('yt_current_page')) || 1;
+        const nextPage = currentPage + 1;
+
+        // Tembak halaman baru, minta putar lagu PERTAMA ('first')
+        executeSearch(lastKeyword, nextPage, 'first');
+    }
 });
 
+// ==========================================
+// 💡 LOGIKA AUTO PLAY PREV / PAGINASI MUNDUR
+// ==========================================
+document.addEventListener('app:play-prev', () => {
+    const allCards = Array.from(document.querySelectorAll('.video-card'));
+    const currentUrl = localStorage.getItem('yt_cached_url');
+    const currentIndex = allCards.findIndex(card => card.dataset.url === currentUrl);
+    const currentPage = parseInt(sessionStorage.getItem('yt_current_page')) || 1;
+
+    if (currentIndex > 0) {
+        // AMAN: Mundur 1 urutan di layar yang sama
+        const prevCard = allCards[currentIndex - 1];
+        prevCard.click();
+    } else if (currentIndex === 0 && currentPage > 1) {
+        // 💡 JURUS MUNDUR HALAMAN!
+        console.log("Mencapai awal daftar. Memuat halaman sebelumnya...");
+        searchStatus.innerText = "Memuat halaman sebelumnya... 🔄";
+        
+        const lastKeyword = sessionStorage.getItem('yt_last_search_keyword') || "";
+        const prevPage = currentPage - 1;
+
+        // Tembak halaman sebelumnya, minta putar lagu TERAKHIR ('last')
+        executeSearch(lastKeyword, prevPage, 'last');
+    }
+});
 
 renderVideoCard('video-card-container', (videoElement) => {
     

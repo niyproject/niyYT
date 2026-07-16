@@ -233,3 +233,28 @@ body {
     opacity: 0 !important;
     border: none !important;
 }
+
+
+/* ==========================================
+   SKELETON LOADING ANIMATION
+   ========================================== */
+.skeleton {
+    /* Gradasi gelap ke terang lalu ke gelap lagi */
+    background: linear-gradient(90deg, #2a2a2a 25%, #3a3a3a 50%, #2a2a2a 75%);
+    background-size: 200% 100%;
+    animation: skeletonShimmer 1.5s infinite linear;
+}
+
+@keyframes skeletonShimmer {
+    0% {
+        background-position: 200% 0;
+    }
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+/* Biar skeletonnya gak bisa diklik pas lagi loading */
+.skeleton-wrapper {
+    pointer-events: none; 
+}

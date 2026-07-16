@@ -9,10 +9,10 @@ export function renderVideoCard(containerId, onVideoReady) {
     const container = document.getElementById(containerId);
 
     // ==========================================
-    // UPDATE HTML: Wadah Video & Overlay Loading
+    // UPDATE HTML: Wadah Video & Custom Controls
     // ==========================================
     container.innerHTML = `
-        <div class="video-container" id="vidContainer" style="display:none; padding: 15px;">
+        <div class="video-container" id="vidContainer" style="display:none; padding: 15px; background: #1a1a1a; border-radius: 12px; margin-bottom: 20px;">
             <div id="statusMessage" class="status" style="margin-bottom:10px; font-size: 13px; color: #aaa;"></div>
 
             <div id="playerWrapper" style="position: relative; width: 100%; border-radius: 8px; overflow: hidden; background: #000; aspect-ratio: 16/9;">
@@ -20,20 +20,41 @@ export function renderVideoCard(containerId, onVideoReady) {
 
                 <div id="thumbOverlay" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; background-color: #000; cursor: pointer;">
                     <img id="overlayImage" src="" style="width: 100%; height: 100%; object-fit: cover; opacity: 0.5;">
-
                     <div id="overlaySpinner" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); display: none;">
                         <div class="loading-spinner"></div>
                     </div>
-
                     <div id="overlayStandbyPlay" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 60px; color: rgba(255,0,0,0.8); display: none; text-shadow: 0px 0px 10px black;">
-                        ▶
+                        <i class="fa-solid fa-circle-play"></i>
                     </div>
                 </div>
             </div>
 
-            <div class="video-controls" style="margin-top:10px; display:flex; justify-content:flex-end; gap:10px;">
-                <button class="btn-control" id="btnPip" style="background:#ff0000; border:none; padding:8px 12px; color:#fff; border-radius:4px; font-weight:bold; cursor:pointer;">Melayang (PiP)</button>
-                <button class="btn-control" id="btnFullscreen" style="background:#ff0000; border:none; padding:8px 12px; color:#fff; border-radius:4px; font-weight:bold; cursor:pointer;">Layar Penuh</button>
+            <div class="custom-controls" style="margin-top: 15px;">
+                
+                <div class="progress-area" style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
+                    <span id="currentTimeDisplay" style="color: #fff; font-size: 12px; font-family: 'Poppins', system-ui, sans-serif;">00:00</span>
+                    <input type="range" id="progressBar" min="0" max="100" value="0" style="flex: 1; cursor: pointer; accent-color: #ff0000; height: 4px; border-radius: 2px; outline: none;">
+                    <span id="durationDisplay" style="color: #fff; font-size: 12px; font-family: 'Poppins', system-ui, sans-serif;">00:00</span>
+                </div>
+
+                <div class="buttons-area" style="display: flex; justify-content: space-between; align-items: center;">
+                    
+                    <div class="playback-controls" style="display: flex; align-items: center; gap: 15px;">
+                        <button class="ctrl-btn" id="btnPrev" title="Previous"><i class="fa-solid fa-backward-step"></i></button>
+                        <button class="ctrl-btn" id="btnSeekBack" title="Mundur 5 Detik"><i class="fa-solid fa-backward"></i></button>
+                        
+                        <button class="ctrl-btn play-btn" id="btnPlayPause" title="Play/Pause"><i class="fa-solid fa-play"></i></button>
+                        
+                        <button class="ctrl-btn" id="btnSeekForward" title="Maju 5 Detik"><i class="fa-solid fa-forward"></i></button>
+                        <button class="ctrl-btn" id="btnNext" title="Next"><i class="fa-solid fa-forward-step"></i></button>
+                    </div>
+
+                    <div class="tools-controls" style="display: flex; gap: 15px;">
+                        <button class="ctrl-btn" id="btnPip" title="Picture in Picture"><i class="fa-solid fa-clone"></i></button>
+                        <button class="ctrl-btn" id="btnFullscreen" title="Fullscreen"><i class="fa-solid fa-expand"></i></button>
+                    </div>
+                </div>
+
             </div>
         </div>
     `;
@@ -45,6 +66,11 @@ export function renderVideoCard(containerId, onVideoReady) {
     const overlayImage = document.getElementById('overlayImage');
     const overlaySpinner = document.getElementById('overlaySpinner');
     const overlayStandbyPlay = document.getElementById('overlayStandbyPlay');
+
+    const progressBar = document.getElementById('progressBar');
+    const currentTimeDisplay = document.getElementById('currentTimeDisplay');
+    const durationDisplay = document.getElementById('durationDisplay');
+    const btnPlayPause = document.getElementById('btnPlayPause');
 
     // ==========================================
     // VARIABLE INTERNAL (STATE)
@@ -83,6 +109,63 @@ export function renderVideoCard(containerId, onVideoReady) {
         overlaySpinner.style.display = 'none';
     };
 
+
+    // ==========================================
+    // LOGIKA KONTROL VIDEO (OTAK TOMBOL)
+    // ==========================================
+    
+    // 1. Update Play/Pause Icon
+    player.addEventListener('play', () => {
+        btnPlayPause.innerHTML = '<i class="fa-solid fa-pause"></i>';
+    });
+    player.addEventListener('pause', () => {
+        btnPlayPause.innerHTML = '<i class="fa-solid fa-play"></i>';
+    });
+
+    // 2. Klik Tombol Play/Pause
+    btnPlayPause.addEventListener('click', () => {
+        if (player.paused) player.play();
+        else player.pause();
+    });
+
+    // 3. Seek Maju/Mundur 5 Detik
+    document.getElementById('btnSeekBack').addEventListener('click', () => {
+        player.currentTime -= 5;
+    });
+    document.getElementById('btnSeekForward').addEventListener('click', () => {
+        player.currentTime += 5;
+    });
+
+    // 4. Update Progress Bar & Waktu (Setiap video jalan)
+    player.addEventListener('timeupdate', () => {
+        const percent = (player.currentTime / player.duration) * 100;
+        progressBar.value = percent || 0;
+        
+        // Format waktu (00:00)
+        const format = (sec) => {
+            const m = Math.floor(sec / 60);
+            const s = Math.floor(sec % 60);
+            return `${m}:${s.toString().padStart(2, '0')}`;
+        };
+        currentTimeDisplay.innerText = format(player.currentTime);
+        if(player.duration) durationDisplay.innerText = format(player.duration);
+    });
+
+    // 5. Geser Progress Bar (Manual Seek)
+    progressBar.addEventListener('input', (e) => {
+        const time = (e.target.value / 100) * player.duration;
+        player.currentTime = time;
+    });
+
+    // 6. Next & Prev (Menghubungkan ke sistem app)
+    document.getElementById('btnNext').addEventListener('click', () => {
+        document.dispatchEvent(new CustomEvent('app:play-next'));
+    });
+    
+    document.getElementById('btnPrev').addEventListener('click', () => {
+        document.dispatchEvent(new CustomEvent('app:play-prev'));
+    });
+
     // ==========================================
     // FUNGSI UTAMA LOAD VIDEO
     // ==========================================
@@ -94,7 +177,7 @@ export function renderVideoCard(containerId, onVideoReady) {
             const data = await fetchDirectUrl(url);
             activeStreamUrl = `/stream-video?url=${encodeURIComponent(data.directUrl)}`;
             player.src = activeStreamUrl;
-            player.controls = true;
+            player.controls = false;
 
             player.addEventListener('loadedmetadata', function onMeta() {
                 const savedTime = localStorage.getItem('yt_saved_time');
@@ -107,12 +190,16 @@ export function renderVideoCard(containerId, onVideoReady) {
             try {
                 await player.play();
                 clearStallDetector();
+                // 💡 Kalau berhasil auto-play, overlay akan dihilangkan otomatis
+                // oleh event 'playing' di bawah.
             } catch (e) {
-                statusMessage.innerText = "Siap! Klik tombol Play.";
-                hideOverlay();
+                console.log("Auto-play ditahan browser.");
+                statusMessage.innerText = "Siap! Ketuk layar atau tombol Play.";
+                showOverlay('standby'); // Munculkan gambar dan tombol play raksasa
             }
 
         } catch (err) {
+            // 💡 INI BARU ERROR ASLI (Kalau server backend lu diblokir YouTube)
             statusMessage.innerText = "Gagal memuat video! YouTube memblokir akses.";
             hideOverlay();
         }
@@ -172,13 +259,21 @@ export function renderVideoCard(containerId, onVideoReady) {
         startStallDetector();
     });
 
+
     player.addEventListener('playing', () => {
+        statusMessage.innerText = "Now Playing 🎵"; // 💡 Reset tulisan status
         hideOverlay();
         clearStallDetector();
     });
 
     player.addEventListener('stalled', () => {
         startStallDetector();
+    });
+
+    // 💡 TAMBAHAN BARU: Sensor kalau video udah mentok habis (Tamat)
+    player.addEventListener('ended', () => {
+        statusMessage.innerText = "Video selesai. Memutar lagu selanjutnya... ⏭️";
+        document.dispatchEvent(new CustomEvent('app:play-next'));
     });
 
     player.addEventListener('timeupdate', () => {
@@ -194,20 +289,33 @@ export function renderVideoCard(containerId, onVideoReady) {
         onVideoReady(player);
     };
 
+
     // ==========================================
-    // LOGIKA PERGANTIAN VIDEO & KLIK OVERLAY
+    // LOGIKA PERGANTIAN VIDEO & KLIK OVERLAY (FINAL FIX)
     // ==========================================
-    
-    // Perluas area klik ke seluruh area proksi gambar thumbnail
+
     thumbOverlay.addEventListener('click', () => {
         if (overlayStandbyPlay.style.display !== 'none') {
             const savedUrl = localStorage.getItem('yt_cached_url');
-            if (savedUrl) {
-                showOverlay('loading'); 
-                loadAndPlayVideo(savedUrl); 
+            
+            // Cek kalau source videonya kebetulan kosong/error, kita paksa fetch ulang
+            if (!player.src || player.src === window.location.href) {
+                showOverlay('loading');
+                if (savedUrl) loadAndPlayVideo(savedUrl);
+            } else {
+                // Kalau source ada, paksa play
+                statusMessage.innerText = "Memulai pemutaran... ⏳";
+                player.play().then(() => {
+                    hideOverlay();
+                }).catch(err => {
+                    console.log("Play manual masih ditolak, muat ulang:", err);
+                    showOverlay('loading');
+                    if (savedUrl) loadAndPlayVideo(savedUrl);
+                });
             }
         }
     });
+
 
     if (playUrlHandler) {
         document.removeEventListener('app:play-url', playUrlHandler);
