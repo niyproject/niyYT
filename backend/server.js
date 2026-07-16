@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const { exec } = require('child_process');
 const https = require('https'); // Modul bawaan Node.js
-
+const http = require('http');
 const ytSearch = require('yt-search');
 
 const app = express();
@@ -39,11 +39,12 @@ app.get('/stream-video', (req, res) => {
         options.headers['Range'] = req.headers.range;
     }
 
-    // Tampung request ke dalam variabel proxyReq biar bisa dikontrol
-    const proxyReq = https.get(directUrl, options, (ytResponse) => {
-        
+    // 💡 KUNCI FIX: Pilih modul http atau https secara otomatis tergantung isi URL
+    const client = directUrl.startsWith('https') ? https : http;
+
+    const proxyReq = client.get(directUrl, options, (ytResponse) => {
         res.status(ytResponse.statusCode);
-        
+
         const headersToKeep = ['content-type', 'content-length', 'content-range', 'accept-ranges'];
         for (const header of headersToKeep) {
             if (ytResponse.headers[header]) {
@@ -54,26 +55,22 @@ app.get('/stream-video', (req, res) => {
         ytResponse.pipe(res);
     });
 
-    // Handle error dari request itu sendiri
     proxyReq.on('error', (err) => {
         if (err.code === 'ECONNRESET') {
             console.log("Koneksi diputus oleh browser (diabaikan).");
         } else {
-            console.error("Proxy error:", err.message);
+            console.error("❌ Proxy error:", err.message);
         }
-        
-        // KUNCI PERBAIKAN: Cek dulu apakah header udah dikirim!
+
         if (!res.headersSent) {
             res.status(500).send("Gagal menyambung ke stream");
         } else {
-            res.end(); // Kalau udah jalan, akhiri saja secara diam-diam
+            res.end();
         }
     });
 
-    // Handle kalau user nutup tab / refresh / matiin frontend
     req.on('close', () => {
-        // Hancurkan koneksi ke Google biar gak nyedot kuota/RAM di belakang layar
-        proxyReq.destroy(); 
+        proxyReq.destroy();
     });
 });
 

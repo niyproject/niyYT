@@ -4,6 +4,7 @@ import { initPanning } from './components/Effects/Panning';
 import { initGraphicEQ } from './components/Effects/GraphicEQ';
 import { initDistortion } from './components/Effects/Distortion';
 import { initEchoDelay } from './components/Effects/EchoDelay';
+import { initReverbPedal } from './components/Effects/ReverbPedal';
 
 let audioCtx, isSetup = false;
 
@@ -138,8 +139,11 @@ renderVideoCard('video-card-container', (videoElement) => {
     // D. Masuk ke Distortion
     const distOut = initDistortion(audioCtx, merger, 'distortion-container');
 
-    // E. Masuk ke Echo Analog
-    const finalOut = initEchoDelay(audioCtx, distOut, 'echo-delay-container');
+    // E. Masuk ke Echo Ping-Pong
+    const echoOut = initEchoDelay(audioCtx, distOut, 'echo-delay-container');
+
+    // F. Masuk ke True Reverb (Tercelup Gema Ruangan)
+    const finalOut = initReverbPedal(audioCtx, echoOut, 'reverb-container');
 
     // 5. Output Akhir dicolok ke Speaker HP/Browser
     finalOut.connect(audioCtx.destination);
