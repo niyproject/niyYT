@@ -1,10 +1,10 @@
-// Import semua efek dari folder Mixing
-import { initDelay } from './Mixing/Delay';
-import { initPanning } from './Mixing/Panning';
-import { initGraphicEQ } from './Mixing/GraphicEQ';
-import { initDistortion } from './Mixing/Distortion';
-import { initEchoDelay } from './Mixing/EchoDelay';
-import { initReverb } from './Mixing/Reverb';
+// Import HANYA fungsi perakit Node dari masing-masing efek
+import { initDelayNode } from './Mixing/Delay';
+import { initPanningNode } from './Mixing/Panning';
+import { initGraphicEQNode } from './Mixing/GraphicEQ';
+import { initDistortionNode } from './Mixing/Distortion';
+import { initEchoDelayNode } from './Mixing/EchoDelay';
+import { initReverbNode } from './Mixing/Reverb';
 
 export function initAudioRouting(audioCtx, sourceNode) {
     // 1. Pemisah Jalur (Splitter ke L & R)
@@ -18,17 +18,18 @@ export function initAudioRouting(audioCtx, sourceNode) {
     splitter.connect(chR, 1);
 
     // ==========================================
-    // 2. ESTAFET KABEL (DAISY CHAIN)
+    // 2. ESTAFET KABEL (DAISY CHAIN) MURNI
+    // (Perhatikan: Tidak ada lagi ID container string HTML di sini!)
     // ==========================================
 
     // A. Masuk ke Delay (Haas Effect)
-    const delayOut = initDelay(audioCtx, chL, chR, 'delay-container');
+    const delayOut = initDelayNode(audioCtx, chL, chR);
 
     // B. Masuk ke Panning
-    const panOut = initPanning(audioCtx, delayOut.outL, delayOut.outR, 'panning-container');
+    const panOut = initPanningNode(audioCtx, delayOut.outL, delayOut.outR);
 
     // C. Masuk ke 30-Band Graphic EQ (Kiri & Kanan)
-    const eqOut = initGraphicEQ(audioCtx, panOut.outL, panOut.outR, 'eq-container');
+    const eqOut = initGraphicEQNode(audioCtx, panOut.outL, panOut.outR);
 
     // Penggabung Jalur (Merger L & R jadi Mono/Stereo Gabungan)
     const merger = audioCtx.createChannelMerger(2);
@@ -36,13 +37,13 @@ export function initAudioRouting(audioCtx, sourceNode) {
     eqOut.outR.connect(merger, 0, 1);
 
     // D. Masuk ke Distortion
-    const distOut = initDistortion(audioCtx, merger, 'distortion-container');
+    const distOut = initDistortionNode(audioCtx, merger);
 
     // E. Masuk ke Echo Ping-Pong
-    const echoOut = initEchoDelay(audioCtx, distOut, 'echo-delay-container');
+    const echoOut = initEchoDelayNode(audioCtx, distOut);
 
     // F. Masuk ke True Reverb (Tercelup Gema Ruangan)
-    const finalOut = initReverb(audioCtx, echoOut, 'reverb-container');
+    const finalOut = initReverbNode(audioCtx, echoOut);
 
     // 3. Output Akhir dicolok ke Speaker HP/Browser
     finalOut.connect(audioCtx.destination);

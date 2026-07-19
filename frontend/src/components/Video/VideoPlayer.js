@@ -435,6 +435,30 @@ export function renderVideoPlayer(containerId, onVideoReady) {
         if (document.fullscreenElement) await document.exitFullscreen();
         else await vidContainer.requestFullscreen().catch(() => {});
     });
-    player.addEventListener('enterpictureinpicture', () => vidContainer.classList.add('is-pip'));
-    player.addEventListener('leavepictureinpicture', () => vidContainer.classList.remove('is-pip'));
+
+    // ==========================================
+    // DETEKSI MODE PiP (PICTURE-IN-PICTURE)
+    // ==========================================
+    player.addEventListener('enterpictureinpicture', () => {
+        vidContainer.classList.add('is-pip');
+    });
+
+    player.addEventListener('leavepictureinpicture', () => {
+        vidContainer.classList.remove('is-pip');
+        
+        // KUNCI SAKTI: Kasih waktu 400ms agar transisi jendela selesai seutuhnya
+        setTimeout(() => {
+            // Coba pancing resume audio context global jika ter-suspend saat transisi
+            if (window.AudioContext || window.webkitAudioContext) {
+                document.dispatchEvent(new CustomEvent('app:resume-audio'));
+            }
+
+            // Paksa mainkan kembali video
+            player.play().catch(err => {
+                console.log("Mencoba alternatif play kedua...", err);
+                // Fallback jika ketahan proteksi browser: pemicuan via interaksi halus
+                setTimeout(() => { if (player.paused) player.play().catch(() => {}); }, 200);
+            });
+        }, 400); 
+    });
 }

@@ -9,7 +9,10 @@ function makeDistortionCurve(amount) {
     return curve;
 }
 
-export function initDistortion(audioCtx, inputNode, containerId) {
+// ==========================================
+// FUNGSI 1: MURNI MENGGAMBAR UI
+// ==========================================
+export function renderDistortionUI(containerId) {
     const savedDist = localStorage.getItem('audio_dist') || '0';
 
     document.getElementById(containerId).innerHTML = `
@@ -19,16 +22,27 @@ export function initDistortion(audioCtx, inputNode, containerId) {
         </div>
     `;
 
-    const distNode = audioCtx.createWaveShaper();
-    distNode.curve = makeDistortionCurve(parseFloat(savedDist) * 4);
-    
-    inputNode.connect(distNode);
-
     document.getElementById('slDist').addEventListener('input', (e) => {
         let val = parseFloat(e.target.value);
-        distNode.curve = makeDistortionCurve(val * 4);
         document.getElementById('valDist').innerText = val + " %";
         localStorage.setItem('audio_dist', val);
+        document.dispatchEvent(new CustomEvent('audio:distortion-changed', { detail: { value: val } }));
+    });
+}
+
+// ==========================================
+// FUNGSI 2: MURNI MERAKIT AUDIO NODE
+// ==========================================
+export function initDistortionNode(audioCtx, inputNode) {
+    const savedDist = localStorage.getItem('audio_dist') || '0';
+
+    const distNode = audioCtx.createWaveShaper();
+    distNode.curve = makeDistortionCurve(parseFloat(savedDist) * 4);
+
+    inputNode.connect(distNode);
+
+    document.addEventListener('audio:distortion-changed', (e) => {
+        distNode.curve = makeDistortionCurve(e.detail.value * 4);
     });
 
     return distNode;

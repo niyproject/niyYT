@@ -12,7 +12,7 @@ export function openAboutModal() {
             <span class="modal-close" id="closeAbout">&times;</span>
             <div style="margin-bottom: 15px;">
                 <!-- 💡 LOGO ASLI LU KEMBALI! -->
-                <img src="/src/assets/logo.png" alt="NiyYT Logo" style="width: 60px; height: 60px; object-fit: contain; border-radius: 12px;">
+                <img src="/logo.png" alt="NiyYT Logo" style="width: 60px; height: 60px; object-fit: contain; border-radius: 12px;">
                 <h2 style="color: #cc0000; margin: 10px 0 5px 0; font-size: 22px;">NiyYT</h2>
             </div>
             <p style="color: #333; font-size: 13px; line-height: 1.6; text-align: justify; margin-bottom: 15px;">

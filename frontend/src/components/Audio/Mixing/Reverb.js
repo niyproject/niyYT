@@ -1,7 +1,10 @@
 import './Mixing.css';
 
-export function initReverb(audioCtx, inputNode, containerId) {
-    const savedTime = localStorage.getItem('audio_reverb_time') || '2.5'; 
+// ==========================================
+// FUNGSI 1: MURNI MENGGAMBAR UI
+// ==========================================
+export function renderReverbUI(containerId) {
+    const savedTime = localStorage.getItem('audio_reverb_time') || '2.5';
     const savedMix = localStorage.getItem('audio_reverb_mix') || '25';
 
     document.getElementById(containerId).innerHTML = `
@@ -15,14 +18,36 @@ export function initReverb(audioCtx, inputNode, containerId) {
         </div>
     `;
 
+    document.getElementById('slRevTime').addEventListener('change', (e) => {
+        const val = parseFloat(e.target.value);
+        localStorage.setItem('audio_reverb_time', val);
+        document.dispatchEvent(new CustomEvent('audio:reverb-time-changed', { detail: { value: val } }));
+    });
+
+    document.getElementById('slRevTime').addEventListener('input', (e) => {
+        document.getElementById('valRevTime').innerText = e.target.value + " dtk";
+    });
+
+    document.getElementById('slRevMix').addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        document.getElementById('valRevMix').innerText = val + " %";
+        localStorage.setItem('audio_reverb_mix', val);
+        document.dispatchEvent(new CustomEvent('audio:reverb-mix-changed', { detail: { value: val } }));
+    });
+}
+
+// ==========================================
+// FUNGSI 2: MURNI MERAKIT AUDIO NODE
+// ==========================================
+export function initReverbNode(audioCtx, inputNode) {
+    const savedTime = localStorage.getItem('audio_reverb_time') || '2.5';
+    const savedMix = localStorage.getItem('audio_reverb_mix') || '25';
+
     const reverbOutput = audioCtx.createGain();
     const dryGain = audioCtx.createGain();
     const wetGain = audioCtx.createGain();
-    
-    // Mesin pembuat ruangan
     const convolver = audioCtx.createConvolver();
 
-    // Fungsi pencetak akustik ruangan virtual (White noise memudar)
     const generateImpulseResponse = (duration) => {
         const sampleRate = audioCtx.sampleRate;
         const length = sampleRate * duration;
@@ -38,17 +63,15 @@ export function initReverb(audioCtx, inputNode, containerId) {
         return impulse;
     };
 
-    // Render ruangan awal
     convolver.buffer = generateImpulseResponse(parseFloat(savedTime));
 
     const setMix = (val) => {
         const wetPercent = val / 100;
         wetGain.gain.value = wetPercent;
-        dryGain.gain.value = 1 - (wetPercent * 0.3); // Kurangi suara murni dikit biar gak balapan
+        dryGain.gain.value = 1 - (wetPercent * 0.3);
     };
     setMix(parseFloat(savedMix));
 
-    // Routing Kabel
     inputNode.connect(dryGain);
     dryGain.connect(reverbOutput);
 
@@ -56,22 +79,13 @@ export function initReverb(audioCtx, inputNode, containerId) {
     convolver.connect(wetGain);
     wetGain.connect(reverbOutput);
 
-    // UI Events (Pakai 'change' biar browser HP gak berat generate IR terus-terusan pas digeser)
-    document.getElementById('slRevTime').addEventListener('change', (e) => {
-        const val = parseFloat(e.target.value);
-        convolver.buffer = generateImpulseResponse(val);
-        localStorage.setItem('audio_reverb_time', val);
-    });
-    
-    document.getElementById('slRevTime').addEventListener('input', (e) => {
-        document.getElementById('valRevTime').innerText = e.target.value + " dtk";
+    // --- TERIMA SIGNAL EVENT DARI REMOTE UI ---
+    document.addEventListener('audio:reverb-time-changed', (e) => {
+        convolver.buffer = generateImpulseResponse(e.detail.value);
     });
 
-    document.getElementById('slRevMix').addEventListener('input', (e) => {
-        const val = parseFloat(e.target.value);
-        setMix(val);
-        document.getElementById('valRevMix').innerText = val + " %";
-        localStorage.setItem('audio_reverb_mix', val);
+    document.addEventListener('audio:reverb-mix-changed', (e) => {
+        setMix(e.detail.value);
     });
 
     return reverbOutput;

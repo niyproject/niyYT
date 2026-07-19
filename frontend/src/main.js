@@ -3,7 +3,15 @@ import { executeSearch, renderVideoList } from './components/Video/VideoList';
 import { initAudioRouting } from './components/Audio/routing';
 import { openAboutModal } from './components/PopupModal/About';
 import { openPlaylistModal } from './components/PopupModal/Playlist';
-import './components/PopupModal/PopupModal.css';
+
+import { renderDelayUI } from './components/Audio/Mixing/Delay';
+import { renderPanningUI } from './components/Audio/Mixing/Panning';
+import { renderGraphicEQUI } from './components/Audio/Mixing/GraphicEQ';
+import { renderDistortionUI } from './components/Audio/Mixing/Distortion';
+import { renderEchoDelayUI } from './components/Audio/Mixing/EchoDelay';
+import { renderReverbUI } from './components/Audio/Mixing/Reverb';
+
+import { registerSW } from 'virtual:pwa-register';
 
 let isAudioSetup = false;
 
@@ -49,12 +57,41 @@ searchForm.addEventListener('submit', async (e) => {
     executeSearch(keyword, 1);
 });
 
+/*
 // ==========================================
 // BOOTLOADER CACHE MEMORY RESTORE
 // ==========================================
 document.addEventListener('DOMContentLoaded', () => {
     const savedKeyword = sessionStorage.getItem('yt_last_search_keyword');
     const savedResults = sessionStorage.getItem('yt_last_search_results');
+    if (savedResults && savedKeyword !== 'Custom Playlist') {
+        searchInput.value = savedKeyword || "";
+        try {
+            renderVideoList(JSON.parse(savedResults));
+        } catch (e) { executeSearch("", 1); }
+    } else {
+        executeSearch("", 1); // Panggil tab trending saat web kosong pertama dibuka
+    }
+});
+*/
+
+// ==========================================
+// BOOTLOADER CACHE MEMORY RESTORE & UI RENDER
+// ==========================================
+document.addEventListener('DOMContentLoaded', () => {
+    // 💡 1. RENDER SELURUH UI MIXER SEKARANG JUGA!
+    // Langsung gambar semuanya ke tab Mixer tanpa perlu nunggu lagu di-play
+    renderGraphicEQUI('eq-container');
+    renderDelayUI('delay-container');
+    renderDistortionUI('distortion-container');
+    renderPanningUI('panning-container');
+    renderEchoDelayUI('echo-delay-container');
+    renderReverbUI('reverb-container');
+
+    // 2. Logic Cache YouTube bawaan lu
+    const savedKeyword = sessionStorage.getItem('yt_last_search_keyword');
+    const savedResults = sessionStorage.getItem('yt_last_search_results');
+    
     if (savedResults && savedKeyword !== 'Custom Playlist') {
         searchInput.value = savedKeyword || "";
         try {
@@ -113,6 +150,12 @@ document.addEventListener('app:play-prev', () => {
     } else if (currentIndex === 0 && currentPage > 1) {
         const lastKeyword = sessionStorage.getItem('yt_last_search_keyword') || "";
         executeSearch(lastKeyword, currentPage - 1, 'last');
+    }
+});
+
+document.addEventListener('app:resume-audio', () => {
+    if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume();
     }
 });
 
@@ -194,4 +237,18 @@ document.getElementById('btnMenuAbout').addEventListener('click', () => {
     dropdownMenu.style.display = 'none'; 
     menuIcon.className = 'fa-solid fa-ellipsis-vertical'; 
     openAboutModal(); // Panggil fungsi pembangun DOM
+});
+
+
+// ==========================================
+// PWA SERVICE WORKER REGISTRATION
+// ==========================================
+registerSW({
+    immediate: true,
+    onNeedRefresh() {
+        console.log('Update PWA tersedia. Silakan refresh aplikasi.');
+    },
+    onOfflineReady() {
+        console.log('PWA berhasil diinstal dan siap berjalan!');
+    }
 });
