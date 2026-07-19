@@ -1,4 +1,6 @@
-export function initReverbPedal(audioCtx, inputNode, containerId) {
+import './Mixing.css';
+
+export function initReverb(audioCtx, inputNode, containerId) {
     const savedTime = localStorage.getItem('audio_reverb_time') || '2.5'; 
     const savedMix = localStorage.getItem('audio_reverb_mix') || '25';
 
@@ -13,7 +15,7 @@ export function initReverbPedal(audioCtx, inputNode, containerId) {
         </div>
     `;
 
-    const pedalOutput = audioCtx.createGain();
+    const reverbOutput = audioCtx.createGain();
     const dryGain = audioCtx.createGain();
     const wetGain = audioCtx.createGain();
     
@@ -48,11 +50,11 @@ export function initReverbPedal(audioCtx, inputNode, containerId) {
 
     // Routing Kabel
     inputNode.connect(dryGain);
-    dryGain.connect(pedalOutput);
+    dryGain.connect(reverbOutput);
 
     inputNode.connect(convolver);
     convolver.connect(wetGain);
-    wetGain.connect(pedalOutput);
+    wetGain.connect(reverbOutput);
 
     // UI Events (Pakai 'change' biar browser HP gak berat generate IR terus-terusan pas digeser)
     document.getElementById('slRevTime').addEventListener('change', (e) => {
@@ -72,5 +74,5 @@ export function initReverbPedal(audioCtx, inputNode, containerId) {
         localStorage.setItem('audio_reverb_mix', val);
     });
 
-    return pedalOutput;
+    return reverbOutput;
 }

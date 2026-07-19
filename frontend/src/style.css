@@ -1,260 +1,127 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { 
-    font-family: system-ui, sans-serif; 
-    background: #121212; 
-    color: #fff; 
+
+body {
+    font-family: 'Poppins', system-ui, sans-serif;
+    background: #121212;
+    color: #fff;
     padding-top: 60px; /* Jarak untuk top nav */
     padding-bottom: 70px; /* Jarak untuk bottom nav */
 }
 
-/* TOP NAV */
+/* ==========================================
+   TOP NAVIGATION
+========================================== */
 .top-nav {
     position: fixed; top: 0; left: 0; right: 0; height: 60px;
     background: #0f0f0f; border-bottom: 1px solid #333;
-    display: flex; align-items: center; padding: 0 15px; z-index: 100;
+    display: flex; align-items: center; padding: 0 15px; z-index: 99999 !important;
 }
-.logo-box { background: #ff0000; padding: 8px 12px; border-radius: 8px; margin-right: 15px; }
+
+.logo-box {
+    background: transparent;
+    padding: 0;
+    margin-right: 15px;
+    display: flex;
+    align-items: center;
+}
+
+.custom-logo {
+    width: 48px;
+    height: 32px;
+    object-fit: contain;
+}
+
 .search-box { display: flex; flex: 1; background: #fff; border-radius: 20px; overflow: hidden; }
 .search-box input { flex: 1; padding: 10px 15px; border: none; outline: none; color: #000; }
-.search-btn { background: #f0f0f0; border: none; padding: 0 15px; cursor: pointer; }
 
-/* BOTTOM NAV */
+.search-btn {
+    background: #f0f0f0;
+    border: none;
+    padding: 0 15px;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+/* ==========================================
+   BOTTOM NAVIGATION
+========================================== */
 .bottom-nav {
     position: fixed; bottom: 0; left: 0; right: 0; height: 60px;
     background: #0f0f0f; border-top: 1px solid #333;
     display: flex; justify-content: space-around; align-items: center; z-index: 100;
 }
+
 .nav-item {
-    background: none; border: none; color: #888; display: flex; flex-direction: column; 
+    background: none; border: none; color: #888; display: flex; flex-direction: column;
     align-items: center; cursor: pointer; font-size: 12px; width: 50%;
 }
+
 .nav-item.active { color: #ff0000; }
-.nav-icon { font-size: 20px; margin-bottom: 4px; }
 
-/* TAB SYSTEM */
-.tab-section { display: none; padding: 15px; }
-.tab-section.active { display: block; }
-.status-text { color: #aaa; text-align: center; margin-top: 20px; }
-
-/* SEARCH RESULTS CARDS */
-.results-grid { display: flex; flex-direction: column; gap: 15px; margin-top: 15px; }
-.video-card {
-    background: #1e1e1e; border-radius: 8px; overflow: hidden; display: flex;
-    flex-direction: column; cursor: pointer; border: 1px solid #333; transition: 0.2s;
-}
-.video-card:active { transform: scale(0.98); }
-.video-thumb { width: 100%; height: 200px; object-fit: cover; background: #000; }
-.video-info { padding: 15px; }
-.video-title { font-size: 14px; font-weight: bold; margin-bottom: 5px; line-height: 1.4; }
-.video-author { font-size: 12px; color: #aaa; }
-
-/* STYLING TRACK EFEK PEDALBOARD */
-.track { 
-    margin-bottom: 15px; 
-    background: #1a1a1a; 
-    padding: 15px; 
-    border-radius: 6px;
-    border: 1px solid #333;
-}
-.track label { 
-    display: flex; 
-    justify-content: space-between; 
-    font-size: 14px; 
-    color: #00C851; 
-    font-weight: bold; 
-    margin-bottom: 5px; 
-}
-input[type="range"].horizontal { 
-    width: 100%; 
-    cursor: pointer; 
-    accent-color: #ff0000; 
-    margin-top: 5px;
-}
-
-/* Update Font Body */
-body { 
-    font-family: 'Poppins', system-ui, sans-serif; /* Pindah ke Poppins */
-    background: #121212; 
-    color: #fff; 
-    padding-top: 60px; 
-    padding-bottom: 70px; 
-}
-
-/* Styling untuk Logo di Top Nav */
-.logo-box { 
-    /* Hapus background merah yang lama kalau lu mau logo PNG-nya nyatu sama background item */
-    /* background: #ff0000; */ 
-    padding: 5px; 
-    margin-right: 15px; 
-    display: flex;
-    align-items: center;
-}
-.custom-logo {
-    width: 32px;  /* Sesuaikan lebarnya bung */
-    height: 32px; /* Sesuaikan tingginya */
-    object-fit: contain; /* Biar rasio 3x2 lu gak penyok */
-}
-
-/* Styling untuk Icon di Bottom Nav */
 .custom-nav-icon {
     width: 24px;
     height: 24px;
     object-fit: contain;
     margin-bottom: 4px;
-    
-    /* Trik keren: Bikin iconnya abu-abu saat gak aktif */
     filter: grayscale(100%) opacity(0.6);
     transition: 0.3s ease;
 }
 
-/* Kalau tombolnya lagi active, iconnya balik ke warna asli (full color) */
-.nav-item.active .custom-nav-icon { 
-    filter: none; 
-}
-
-/* Update font tombol search biar ikon loop 🔍 sejajar */
-.search-btn { 
-    background: #f0f0f0; 
-    border: none; 
-    padding: 0 15px; 
-    cursor: pointer; 
-    font-family: inherit;
-}
-
-/* Wadah logonya kita bikin transparan, gak ada background merah lagi */
-.logo-box { 
-    background: transparent; /* Pastikan ini transparan! */
-    padding: 0; /* Kurangi padding biar gak makan tempat */
-    margin-right: 15px; 
-    display: flex;
-    align-items: center;
-}
-
-/* Gambar logonya kita sesuaikan ke rasio 3:2 */
-.custom-logo {
-    width: 48px;  /* Lebarnya kita besarin (rasio 3) */
-    height: 32px; /* Tingginya tetap (rasio 2) */
-    object-fit: contain;
+.nav-item.active .custom-nav-icon {
+    filter: none;
 }
 
 /* ==========================================
-   WADAH THUMBNAIL & LOGO PLAY
-   ========================================== */
-.thumb-wrapper {
-    position: relative;
-    display: inline-block; 
-    flex-shrink: 0; 
-}
-
-/* Desain Logo Play Default (Tersembunyi) */
-.play-overlay {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background-color: rgba(255, 0, 0, 0.6); /* Warna merah transparan ala YT */
-    color: white;
-    font-size: 60px;
-    width: 100px;
-    height: 100px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding-left: 10px; 
-    opacity: 0; /* Sembunyikan di awal */
-    transition: opacity 0.3s ease;
-    z-index: 2;
-}
+   TAB SYSTEM & GLOBAL STATUS
+========================================== */
+.tab-section { display: none; padding: 15px; }
+.tab-section.active { display: block; }
+.status-text { color: #aaa; text-align: center; margin-top: 20px; }
 
 /* ==========================================
-   STATUS PLAYING (MONOKROM, DISABLED, & MUNCUL PLAY)
-   ========================================== */
-.video-card.playing-now {
-    pointer-events: none; /* Mematikan klik total */
-    cursor: not-allowed;
-    background-color: rgba(255, 255, 255, 0.05);
-    border: 1px solid #555; /* Border redup dipindah ke sini */
+   DROPDOWN MENU STYLES
+========================================== */
+.btn-more {
+    background: transparent; border: none; color: #fff; font-size: 20px;
+    cursor: pointer; padding: 8px 12px; border-radius: 50%; transition: background 0.2s;
+}
+.btn-more:hover { background: rgba(255, 255, 255, 0.1); }
+
+.dropdown-menu {
+    position: absolute; top: 110%; right: 0; background-color: #1a1a1a;
+    border: 1px solid #333; border-radius: 12px; width: 160px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); z-index: 9999; overflow: hidden; padding: 5px 0;
 }
 
-/* Bikin gambarnya aja yang monokrom, biar icon play tetep merah merona */
-.video-card.playing-now .video-thumb {
-    filter: grayscale(90%);
-    opacity: 0.5;
+.menu-item {
+    padding: 12px 16px; color: #e0e0e0; font-size: 14px; font-family: 'Poppins', sans-serif;
+    cursor: pointer; display: flex; align-items: center; gap: 10px; transition: background 0.2s, color 0.2s;
 }
-
-/* Munculkan logo play saat status playing */
-.video-card.playing-now .play-overlay {
-    opacity: 1;
-}
-
+.menu-item i { font-size: 16px; color: #aaa; }
+.menu-item:hover { background-color: #333; color: #fff; }
+.menu-item:hover i { color: #fff; }
+.menu-divider { height: 1px; background-color: #333; margin: 4px 0; }
 
 /* ==========================================
-   LOADING SPINNER UNTUK VIDEO
-   ========================================== */
-.loading-spinner {
-    width: 50px;
-    height: 50px;
-    border: 5px solid rgba(255, 255, 255, 0.3);
-    border-top-color: #ff0000; /* Merah YouTube */
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
+   MODAL STYLES (PLAYLIST & ABOUT)
+========================================== */
+.modal-overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.7); z-index: 999999; display: flex; justify-content: center; align-items: center;
 }
 
-@keyframes spin {
-    to { transform: rotate(360deg); }
+.modal-content {
+    background: #fff; width: 85%; max-width: 380px; border-radius: 20px; padding: 25px 20px;
+    position: relative; box-sizing: border-box; box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    animation: modalFadeIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
 }
 
-/* ==========================================
-   STICKY VIDEO PLAYER (KAYAK YOUTUBE ASLI)
-   ========================================== */
-#video-card-container {
-    position: sticky;
-    top: 60px; /* Ngunci di paling atas layar pas di-scroll */
-    z-index: 100; /* Kasta paling tinggi biar selalu di atas hasil pencarian */
-    
-    /* 💡 WAJIB ADA BACKGROUND */
-    /* Sesuaikan dengan warna background web lu (misal hitam atau gelap) */
-    /* Kalau gak dikasih background, teks pencarian di bawahnya bakal nembus/transparan */
-    background-color: #121212; 
-    
-    /* Opsional: Biar transisinya mulus dan rapi kasih sedikit bayangan ke bawah */
-    box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.5);
+@keyframes modalFadeIn {
+    from { opacity: 0; transform: scale(0.8); }
+    to { opacity: 1; transform: scale(1); }
 }
 
-/* ==========================================
-   MODE PiP AKTIF (KEMPESKAN CONTAINER)
-   ========================================== */
-.video-container.is-pip {
-    height: 0 !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    overflow: hidden !important;
-    opacity: 0 !important;
-    border: none !important;
+.modal-close {
+    position: absolute; top: 12px; right: 18px; font-size: 26px; font-weight: bold; color: #888; cursor: pointer; line-height: 1; transition: color 0.2s;
 }
-
-
-/* ==========================================
-   SKELETON LOADING ANIMATION
-   ========================================== */
-.skeleton {
-    /* Gradasi gelap ke terang lalu ke gelap lagi */
-    background: linear-gradient(90deg, #2a2a2a 25%, #3a3a3a 50%, #2a2a2a 75%);
-    background-size: 200% 100%;
-    animation: skeletonShimmer 1.5s infinite linear;
-}
-
-@keyframes skeletonShimmer {
-    0% {
-        background-position: 200% 0;
-    }
-    100% {
-        background-position: -200% 0;
-    }
-}
-
-/* Biar skeletonnya gak bisa diklik pas lagi loading */
-.skeleton-wrapper {
-    pointer-events: none; 
-}
+.modal-close:hover { color: #cc0000; }

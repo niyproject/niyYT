@@ -1,3 +1,5 @@
+import './Mixing.css';
+
 export function initEchoDelay(audioCtx, inputNode, containerId) {
     const savedTime = localStorage.getItem('audio_echo_time') || '250';
     const savedFeedback = localStorage.getItem('audio_echo_fb') || '40';
@@ -14,10 +16,10 @@ export function initEchoDelay(audioCtx, inputNode, containerId) {
     `;
 
     // Terminal Output Akhir
-    const pedalOutput = audioCtx.createGain();
+    const echoOutput = audioCtx.createGain();
 
     // 1. Jalur Kering (Murni)
-    inputNode.connect(pedalOutput);
+    inputNode.connect(echoOutput);
 
     // 2. Jalur Basah (Efek) - Pakai Keran Volume
     const wetGain = audioCtx.createGain();
@@ -58,7 +60,7 @@ export function initEchoDelay(audioCtx, inputNode, containerId) {
     delayR.connect(merger, 0, 1);
 
     merger.connect(wetGain);
-    wetGain.connect(pedalOutput);
+    wetGain.connect(echoOutput);
 
     // ==========================================
     // UI EVENTS
@@ -87,5 +89,5 @@ export function initEchoDelay(audioCtx, inputNode, containerId) {
         localStorage.setItem('audio_echo_fb', val);
     });
 
-    return pedalOutput;
+    return echoOutput;
 }

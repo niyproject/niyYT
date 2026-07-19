@@ -16,12 +16,35 @@
 
     <header class="top-nav">
         <div class="logo-box">
-            <img src="/logo.png" alt="Logo" class="custom-logo">
+            <img src="/src/assets/logo.png" alt="Logo" class="custom-logo">
         </div>
         <form id="searchForm" class="search-box">
             <input type="text" id="searchInput" placeholder="Cari video YouTube...">
-            <button type="submit" class="search-btn">🔍</button>
+            <!-- 💡 Icon Search diganti pakai Font Awesome -->
+            <button type="submit" class="search-btn">
+                <i class="fa-solid fa-magnifying-glass"></i>
+            </button>
         </form>
+
+        <!-- 💡 Wadah Dropdown Menu (Titik Tiga) ditambahkan di sini -->
+        <div class="menu-container" style="position: relative; margin-left: 12px; display: flex; align-items: center;">
+            <button id="btnMoreMenu" class="btn-more" title="Menu Lainnya" style="background: transparent; border: none; color: #fff; font-size: 20px; cursor: pointer; padding: 5px 10px;">
+                <i class="fa-solid fa-ellipsis-vertical"></i>
+            </button>
+            
+            <div id="dropdownMenu" class="dropdown-menu" style="display: none;">
+                <div id="btnMenuOffline" class="menu-item">
+                    <i class="fa-solid fa-folder-open"></i> Offline
+                </div>
+                <div id="btnMenuPlaylist" class="menu-item">
+                    <i class="fa-solid fa-list-ul"></i> Playlist
+                </div>
+                <div class="menu-divider"></div>
+                <div id="btnMenuAbout" class="menu-item">
+                    <i class="fa-solid fa-circle-info"></i> About
+                </div>
+            </div>
+        </div>
     </header>
 
     <div id="video-card-container"></div>
@@ -35,7 +58,7 @@
 
         <div id="tab-mixer" class="tab-section">
             <div id="eq-container"></div>
-            <div id="delay-pedal-container"></div>
+            <div id="delay-container"></div>
             <div id="distortion-container"></div>
             <div id="panning-container"></div>
             <div id="echo-delay-container"></div>
@@ -46,11 +69,11 @@
 
     <nav class="bottom-nav">
         <button class="nav-item active" id="btn-nav-search">
-            <img src="/icon-yt.png" alt="YT" class="custom-nav-icon">
+            <img src="/src/assets/icon-yt.png" alt="YT" class="custom-nav-icon">
             <span>YouTube</span>
         </button>
         <button class="nav-item" id="btn-nav-mixer">
-            <img src="/icon-mixer.png" alt="Mixer" class="custom-nav-icon">
+            <img src="/src/assets/icon-mixer.png" alt="Mixer" class="custom-nav-icon">
             <span>Mixer</span>
         </button>
     </nav>

@@ -10,19 +10,36 @@ app.use(cors());
 app.use(express.json());
 
 // ==========================================
-// ENDPOINT 1: AMBIL URL MENTAH
+// ENDPOINT 1: AMBIL URL MENTAH (ANTI BOT & ANTI ERROR FORMAT)
 // ==========================================
 app.post('/get-direct-url', (req, res) => {
-    const { url } = req.body;
+    const { url, mode } = req.body; 
+    
+    if (!url) return res.status(400).json({ error: "URL dibutuhkan" });
+    
     const cleanUrl = url.split('?si=')[0];
-    console.log(`Mengekstrak URL: ${cleanUrl}`);
+    console.log(`Mengekstrak URL: ${cleanUrl} (Mode: ${mode || 'video'})`);
 
-    execFile('yt-dlp', [
-        '-g',
-        '-f', 'b[ext=mp4]/best[ext=mp4]',
-        '--extractor-args', 'youtube:player_client=android',
-        cleanUrl
-    ], (error, stdout, stderr) => {
+    // 1. Susun tameng dasar: Wajib pakai jalur API Android biar ga dituduh BOT
+    let args = [
+        '-g', 
+        '--no-playlist',
+        '--extractor-args', 'youtube:player_client=android' // 💡 TAMENG SAKTI KEMBALI
+    ];
+
+    // 2. Strategi Format Tawar-Menawar
+    if (mode === 'audio') {
+        // Coba tarik audio terbaik (ba). 
+        // Kalau kena eksperimen SABR dari YouTube, fallback ke video terkecil (b).
+        args.push('-f', 'ba/b'); 
+    } else {
+        // Mode Video normal
+        args.push('-f', 'b[ext=mp4]/best[ext=mp4]');
+    }
+
+    args.push(cleanUrl);
+
+    execFile('yt-dlp', args, (error, stdout, stderr) => {
         if (error) {
             console.error("❌ YTDLP Error:", stderr || error.message);
             return res.status(500).send("Gagal");
@@ -265,6 +282,63 @@ app.get('/trending', async (req, res) => {
     }
 });
 
+// ==========================================
+// ENDPOINT 5: CUSTOM PLAYLIST VIA YT-DLP
+// ==========================================
+app.get('/playlist', (req, res) => {
+    const playlistUrl = req.query.url;
+    if (!playlistUrl) return res.status(400).send("Link playlist kosong bung");
+
+    console.log(`🎬 Mengurai Custom Playlist: ${playlistUrl}`);
+
+    // Gunakan trik flat-playlist andalan lu biar ekstraksinya kilat
+    execFile('yt-dlp', [
+        '-J',
+        '--flat-playlist',
+        '--geo-bypass',
+        playlistUrl
+    ], { maxBuffer: 1024 * 1024 * 10 }, (error, stdout, stderr) => {
+        if (error) {
+            console.error("❌ YTDLP Playlist Error:", stderr || error.message);
+            return res.status(500).send("Gagal memuat playlist");
+        }
+
+        try {
+            if (!stdout) throw new Error("Data stdout kosong.");
+
+            const data = JSON.parse(stdout);
+            const entries = data.entries || [];
+
+            // Petakan struktur data agar pas dengan komponen list bawah (renderVideoList)
+            const playlistVideos = entries.map(v => {
+                const bestThumb = v.thumbnails && v.thumbnails.length > 0
+                    ? v.thumbnails[v.thumbnails.length - 1].url
+                    : '';
+
+                let formatWaktu = '--:--';
+                if (v.duration) {
+                    const m = Math.floor(v.duration / 60);
+                    const s = Math.floor(v.duration % 60).toString().padStart(2, '0');
+                    formatWaktu = `${m}:${s}`;
+                }
+
+                return {
+                    title: v.title || 'Video Tanpa Judul',
+                    url: v.url || `https://www.youtube.com/watch?v=${v.id}`,
+                    image: bestThumb,
+                    thumbnail: bestThumb,
+                    timestamp: formatWaktu,
+                    author: { name: v.uploader || v.channel || data.title || 'Playlist' }
+                };
+            });
+
+            res.json(playlistVideos);
+        } catch (parseError) {
+            console.error("❌ YTDLP Playlist Parsing Error:", parseError.message);
+            res.status(500).send("Gagal memproses data playlist");
+        }
+    });
+});
 
 
 app.listen(4000, () => console.log("Backend Range-Proxy jalan di port 4000"));

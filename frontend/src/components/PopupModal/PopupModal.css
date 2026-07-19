@@ -1,0 +1,49 @@
+/* src/components/PopupModal/PopupModal.css */
+
+/* Layar Hitam Transparan di Belakang */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.75); /* Kasi agak gelap dikit biar mantap */
+    z-index: 999999 !important; /* Kasta tertinggi menimpa sticky player */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* Kotak Putih Modal Content */
+.modal-content {
+    background: #ffffff !important;
+    width: 85%;
+    max-width: 380px;
+    border-radius: 20px;
+    padding: 25px 20px;
+    position: relative;
+    box-sizing: border-box;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    animation: modalFadeIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+@keyframes modalFadeIn {
+    from { opacity: 0; transform: scale(0.8); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+/* Tombol Silang (X) */
+.modal-close {
+    position: absolute;
+    top: 12px;
+    right: 18px;
+    font-size: 26px;
+    font-weight: bold;
+    color: #888;
+    cursor: pointer;
+    line-height: 1;
+    transition: color 0.2s;
+}
+.modal-close:hover {
+    color: #cc0000;
+}

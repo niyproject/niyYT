@@ -1,0 +1,3013 @@
+-------------------------------------------------------------------------------------
+STRUKTUR FOLDER
+-------------------------------------------------------------------------------------
+.
+.
+├── backend
+│   ├── 1783997590968-player-script.js
+│   ├── 1783997590990-player-script.js
+│   ├── package-lock.json
+│   ├── package.json
+│   └── server.js
+└── frontend
+    ├── index.html
+    ├── package-lock.json
+    ├── package.json
+    ├── public
+    │   ├── favicon.svg
+    │   ├── icon-mixer.png
+    │   ├── icon-yt.png
+    │   ├── icons.svg
+    │   └── logo.png
+    ├── src
+    │   ├── api
+    │   │   └── youtube.js
+    │   ├── assets
+    │   │   ├── hero.png
+    │   │   ├── javascript.svg
+    │   │   └── vite.svg
+    │   ├── audio
+    │   │   └── engine.js
+    │   ├── components
+    │   │   ├── Effects
+    │   │   │   ├── DelayPedal.js
+    │   │   │   ├── Distortion.js
+    │   │   │   ├── EchoDelay.js
+    │   │   │   ├── GraphicEQ.css
+    │   │   │   ├── GraphicEQ.js
+    │   │   │   ├── Panning.js
+    │   │   │   └── ReverbPedal.js
+    │   │   └── Video
+    │   │       ├── VideoCard.css
+    │   │       └── VideoCard.js
+    │   ├── main.js
+    │   └── style.css
+    └── vite.config.js
+
+
+-------------------------------------------------------------------------------------
+backend/package.json
+-------------------------------------------------------------------------------------
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "nodemon server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "fluent-ffmpeg": "^2.1.3",
+    "play-sound": "^1.1.6",
+    "yt-search": "^2.13.1"
+  }
+}
+
+
+-------------------------------------------------------------------------------------
+backend/server.js
+-------------------------------------------------------------------------------------
+const express = require('express');
+const cors = require('cors');
+const { execFile } = require('child_process');
+const https = require('https');
+const http = require('http');
+const ytSearch = require('yt-search');
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// ==========================================
+// ENDPOINT 1: AMBIL URL MENTAH (ANTI BOT & ANTI ERROR FORMAT)
+// ==========================================
+app.post('/get-direct-url', (req, res) => {
+    const { url, mode } = req.body;
+
+    if (!url) return res.status(400).json({ error: "URL dibutuhkan" });
+
+    const cleanUrl = url.split('?si=')[0];
+    console.log(`Mengekstrak URL: ${cleanUrl} (Mode: ${mode || 'video'})`);
+
+    // 1. Susun tameng dasar: Wajib pakai jalur API Android biar ga dituduh BOT
+    let args = [
+        '-g',
+        '--no-playlist',
+        '--extractor-args', 'youtube:player_client=android' // 💡 TAMENG SAKTI KEMBALI
+    ];
+
+    // 2. Strategi Format Tawar-Menawar
+    if (mode === 'audio') {
+        // Coba tarik audio terbaik (ba).
+        // Kalau kena eksperimen SABR dari YouTube, fallback ke video terkecil (b).
+        args.push('-f', 'ba/b');
+    } else {
+        // Mode Video normal
+        args.push('-f', 'b[ext=mp4]/best[ext=mp4]');
+    }
+
+    args.push(cleanUrl);
+
+    execFile('yt-dlp', args, (error, stdout, stderr) => {
+        if (error) {
+            console.error("❌ YTDLP Error:", stderr || error.message);
+            return res.status(500).send("Gagal");
+        }
+        res.json({ directUrl: stdout.trim() });
+    });
+});
+
+// ==========================================
+// ENDPOINT 2: PROXY STREAMING
+// ==========================================
+app.get('/stream-video', (req, res) => {
+    const directUrl = req.query.url;
+    if (!directUrl) return res.status(400).send("Kosong");
+
+    const options = { headers: {} };
+    if (req.headers.range) {
+        options.headers['Range'] = req.headers.range;
+    }
+
+    const client = directUrl.startsWith('https') ? https : http;
+
+    const proxyReq = client.get(directUrl, options, (ytResponse) => {
+        res.status(ytResponse.statusCode);
+
+        const headersToKeep = ['content-type', 'content-length', 'content-range', 'accept-ranges'];
+        for (const header of headersToKeep) {
+            if (ytResponse.headers[header]) {
+                res.setHeader(header, ytResponse.headers[header]);
+            }
+        }
+
+        ytResponse.pipe(res);
+    });
+
+    proxyReq.on('error', (err) => {
+        if (err.code !== 'ECONNRESET') {
+            console.error("❌ Proxy error:", err.message);
+        }
+
+        if (!res.headersSent) {
+            res.status(500).send("Gagal menyambung ke stream");
+        } else {
+            res.end();
+        }
+    });
+
+    req.on('close', () => {
+        proxyReq.destroy();
+    });
+});
+
+/*
+// ==========================================
+// ENDPOINT 3: SEARCH YOUTUBE (DENGAN PAGINASI)
+// ==========================================
+app.get('/search', async (req, res) => {
+    const keyword = req.query.q;
+    const page = parseInt(req.query.page) || 1; // Default ke halaman 1
+
+    if (!keyword) return res.status(400).send("Keyword kosong");
+
+    try {
+        const result = await ytSearch(keyword);
+
+        // Potong hasil pencarian berdasarkan nomor halaman
+        const start = (page - 1) * 10;
+        const end = page * 10;
+        const videos = result.videos.slice(start, end);
+
+        res.json(videos);
+    } catch (err) {
+        console.error("🚨 ROUTE SEARCH ERROR:", err.message);
+        res.status(500).send("Gagal mencari");
+    }
+});
+*/
+
+// ==========================================
+// 💡 FUNGSI PAMUNGKAS: TRENDING GENERAL (DENGAN PAGINASI)
+// ==========================================
+const dapatkanVideoTrending = (page = 1) => {
+    return new Promise((resolve, reject) => {
+        const trendingUrl = 'https://www.youtube.com/playlist?list=PLkbaG37V-vG8Fib_qvgOKf3qzqA0SUk59';
+
+        // yt-dlp punya fitur bawaan buat ngambil urutan spesifik!
+        const limit = 15;
+        const start = ((page - 1) * limit) + 1;
+        const end = page * limit;
+
+        execFile('yt-dlp', [
+            '-J',
+            '--flat-playlist',
+            '--geo-bypass',
+            '--playlist-start', start.toString(),
+            '--playlist-end', end.toString(),
+            trendingUrl
+        ], { maxBuffer: 1024 * 1024 * 5 }, (error, stdout, stderr) => {
+            if (error) {
+                console.error("❌ YTDLP Exec Error:", stderr || error.message);
+                return reject(error);
+            }
+
+            try {
+                if (!stdout) throw new Error("Data stdout dari yt-dlp kosong.");
+
+                const data = JSON.parse(stdout);
+                const entries = data.entries || [];
+
+                // Nggak perlu di .slice(0, 10) lagi karena yt-dlp udah motongin dari sononya
+                const videos = entries.map(v => {
+                    const bestThumb = v.thumbnails && v.thumbnails.length > 0
+                        ? v.thumbnails[v.thumbnails.length - 1].url
+                        : '';
+
+                    let formatWaktu = '--:--';
+                    if (v.duration) {
+                        const m = Math.floor(v.duration / 60);
+                        const s = Math.floor(v.duration % 60).toString().padStart(2, '0');
+                        formatWaktu = `${m}:${s}`;
+                    }
+
+                    return {
+                        title: v.title || 'Video Tanpa Judul',
+                        url: v.url || `https://www.youtube.com/watch?v=${v.id}`,
+                        image: bestThumb,
+                        thumbnail: bestThumb,
+                        timestamp: formatWaktu,
+                        author: { name: v.uploader || v.channel || 'YouTube' }
+                    };
+                });
+
+                resolve(videos);
+            } catch (parseError) {
+                console.error("❌ YTDLP Parsing Error:", parseError.message);
+                reject(parseError);
+            }
+        });
+    });
+};
+
+
+// ==========================================
+// 💡 FUNGSI PAMUNGKAS: SEARCH YOUTUBE VIA YT-DLP (PAGINASI ASLI)
+// ==========================================
+const dapatkanVideoSearch = (keyword, page = 1) => {
+    return new Promise((resolve, reject) => {
+        // Trik: Ubah keyword jadi URL asli pencarian YouTube
+        const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(keyword)}`;
+
+        // Perhitungan urutan potong (1-10, 11-20, 21-30, dst)
+        const limit = 15;
+        const start = ((page - 1) * limit) + 1;
+        const end = page * limit;
+
+        execFile('yt-dlp', [
+            '-J',
+            '--flat-playlist',
+            '--geo-bypass',
+            '--playlist-start', start.toString(),
+            '--playlist-end', end.toString(),
+            searchUrl
+        ], { maxBuffer: 1024 * 1024 * 5 }, (error, stdout, stderr) => {
+            if (error) {
+                console.error("❌ YTDLP Search Error:", stderr || error.message);
+                return reject(error);
+            }
+
+            try {
+                if (!stdout) throw new Error("Data stdout dari yt-dlp kosong.");
+
+                const data = JSON.parse(stdout);
+                const entries = data.entries || [];
+
+                const videos = entries.map(v => {
+                    // Ambil resolusi gambar terbaik
+                    const bestThumb = v.thumbnails && v.thumbnails.length > 0
+                        ? v.thumbnails[v.thumbnails.length - 1].url
+                        : '';
+
+                    // Konversi durasi ke format 00:00
+                    let formatWaktu = '--:--';
+                    if (v.duration) {
+                        const m = Math.floor(v.duration / 60);
+                        const s = Math.floor(v.duration % 60).toString().padStart(2, '0');
+                        formatWaktu = `${m}:${s}`;
+                    }
+
+                    return {
+                        title: v.title || 'Video Tanpa Judul',
+                        url: v.url || `https://www.youtube.com/watch?v=${v.id}`,
+                        image: bestThumb,
+                        thumbnail: bestThumb,
+                        timestamp: formatWaktu,
+                        author: { name: v.uploader || v.channel || 'YouTube' }
+                    };
+                });
+
+                resolve(videos);
+            } catch (parseError) {
+                console.error("❌ YTDLP Parsing Error:", parseError.message);
+                reject(parseError);
+            }
+        });
+    });
+};
+
+
+// ==========================================
+// ENDPOINT 3: SEARCH YOUTUBE (DENGAN YT-DLP)
+// ==========================================
+app.get('/search', async (req, res) => {
+    const keyword = req.query.q;
+    const page = parseInt(req.query.page) || 1;
+
+    if (!keyword) return res.status(400).send("Keyword kosong");
+
+    try {
+        // Langsung hajar pakai mesin baru
+        const videos = await dapatkanVideoSearch(keyword, page);
+        res.json(videos);
+    } catch (err) {
+        console.error("🚨 ROUTE SEARCH ERROR:", err.message);
+        res.status(500).send("Gagal mencari");
+    }
+});
+
+
+// ==========================================
+// ENDPOINT 4: GET TRENDING
+// ==========================================
+app.get('/trending', async (req, res) => {
+    const page = parseInt(req.query.page) || 1;
+    try {
+        const trendingVideos = await dapatkanVideoTrending(page);
+        res.json(trendingVideos);
+    } catch (error) {
+        console.error("🚨 ROUTE TRENDING ERROR:", error.message || error);
+        res.status(500).json({ error: "Gagal mengambil tab trending" });
+    }
+});
+
+// ==========================================
+// ENDPOINT 5: CUSTOM PLAYLIST VIA YT-DLP
+// ==========================================
+app.get('/playlist', (req, res) => {
+    const playlistUrl = req.query.url;
+    if (!playlistUrl) return res.status(400).send("Link playlist kosong bung");
+
+    console.log(`🎬 Mengurai Custom Playlist: ${playlistUrl}`);
+
+    // Gunakan trik flat-playlist andalan lu biar ekstraksinya kilat
+    execFile('yt-dlp', [
+        '-J',
+        '--flat-playlist',
+        '--geo-bypass',
+        playlistUrl
+    ], { maxBuffer: 1024 * 1024 * 10 }, (error, stdout, stderr) => {
+        if (error) {
+            console.error("❌ YTDLP Playlist Error:", stderr || error.message);
+            return res.status(500).send("Gagal memuat playlist");
+        }
+
+        try {
+            if (!stdout) throw new Error("Data stdout kosong.");
+
+            const data = JSON.parse(stdout);
+            const entries = data.entries || [];
+
+            // Petakan struktur data agar pas dengan komponen list bawah (renderVideoList)
+            const playlistVideos = entries.map(v => {
+                const bestThumb = v.thumbnails && v.thumbnails.length > 0
+                    ? v.thumbnails[v.thumbnails.length - 1].url
+                    : '';
+
+                let formatWaktu = '--:--';
+                if (v.duration) {
+                    const m = Math.floor(v.duration / 60);
+                    const s = Math.floor(v.duration % 60).toString().padStart(2, '0');
+                    formatWaktu = `${m}:${s}`;
+                }
+
+                return {
+                    title: v.title || 'Video Tanpa Judul',
+                    url: v.url || `https://www.youtube.com/watch?v=${v.id}`,
+                    image: bestThumb,
+                    thumbnail: bestThumb,
+                    timestamp: formatWaktu,
+                    author: { name: v.uploader || v.channel || data.title || 'Playlist' }
+                };
+            });
+
+            res.json(playlistVideos);
+        } catch (parseError) {
+            console.error("❌ YTDLP Playlist Parsing Error:", parseError.message);
+            res.status(500).send("Gagal memproses data playlist");
+        }
+    });
+});
+
+
+app.listen(4000, () => console.log("Backend Range-Proxy jalan di port 4000"));
+
+
+
+-------------------------------------------------------------------------------------
+frontend/package.json
+-------------------------------------------------------------------------------------
+{
+  "name": "frontend",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^8.1.1"
+  }
+}
+
+
+
+-------------------------------------------------------------------------------------
+frontend/vite.config.js
+-------------------------------------------------------------------------------------
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  server: {
+    port: 3000,
+    strictPort: true,
+    proxy: {
+      '/get-direct-url': 'http://localhost:4000',
+      '/stream-video': 'http://localhost:4000',
+      '/search': 'http://localhost:4000',
+      '/trending': 'http://localhost:4000',
+      '/playlist': 'http://localhost:4000'
+    }
+  }
+});
+
+
+
+
+-------------------------------------------------------------------------------------
+frontend/index.html
+-------------------------------------------------------------------------------------
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YT Audio Mixer</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+
+    <header class="top-nav">
+        <div class="logo-box">
+            <img src="/logo.png" alt="Logo" class="custom-logo">
+        </div>
+        <form id="searchForm" class="search-box">
+            <input type="text" id="searchInput" placeholder="Cari video YouTube...">
+            <!-- 💡 Icon Search diganti pakai Font Awesome -->
+            <button type="submit" class="search-btn">
+                <i class="fa-solid fa-magnifying-glass"></i>
+            </button>
+        </form>
+
+        <!-- 💡 Wadah Dropdown Menu (Titik Tiga) ditambahkan di sini -->
+        <div class="menu-container" style="position: relative; margin-left: 12px; display: flex; align-items: center;">
+            <button id="btnMoreMenu" class="btn-more" title="Menu Lainnya" style="background: transparent; border: none; color: #fff; font-size: 20px; cursor: pointer; padding: 5px 10px;">
+                <i class="fa-solid fa-ellipsis-vertical"></i>
+            </button>
+
+            <div id="dropdownMenu" class="dropdown-menu" style="display: none;">
+                <div id="btnMenuOffline" class="menu-item">
+                    <i class="fa-solid fa-folder-open"></i> Offline
+                </div>
+                <div id="btnMenuPlaylist" class="menu-item">
+                    <i class="fa-solid fa-list-ul"></i> Playlist
+                </div>
+                <div class="menu-divider"></div>
+                <div id="btnMenuAbout" class="menu-item">
+                    <i class="fa-solid fa-circle-info"></i> About
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div id="video-card-container"></div>
+
+    <main class="main-content">
+
+        <div id="tab-search" class="tab-section active">
+            <div id="search-status" class="status-text">Ketik judul lagu di atas untuk mencari...</div>
+            <div id="search-results" class="results-grid"></div>
+        </div>
+
+        <div id="tab-mixer" class="tab-section">
+            <div id="eq-container"></div>
+            <div id="delay-pedal-container"></div>
+            <div id="distortion-container"></div>
+            <div id="panning-container"></div>
+            <div id="echo-delay-container"></div>
+            <div id="reverb-container"></div>
+        </div>
+
+    </main>
+
+    <nav class="bottom-nav">
+        <button class="nav-item active" id="btn-nav-search">
+            <img src="/icon-yt.png" alt="YT" class="custom-nav-icon">
+            <span>YouTube</span>
+        </button>
+        <button class="nav-item" id="btn-nav-mixer">
+            <img src="/icon-mixer.png" alt="Mixer" class="custom-nav-icon">
+            <span>Mixer</span>
+        </button>
+    </nav>
+
+    <!-- ========================================== -->
+    <!-- 💡 MODAL PLAYLIST -->
+    <!-- ========================================== -->
+    <div id="modalPlaylist" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <span class="modal-close" id="closePlaylist">&times;</span>
+            <h3 style="color: #000; margin-top: 0; margin-bottom: 15px; font-size: 16px; text-align: center;">Masukkan link playlist anda</h3>
+            <form id="playlistForm" style="display: flex; flex-direction: column; gap: 15px;">
+                <input type="text" id="playlistInput" placeholder="ex: https://www.youtube.com/playlist?list=..." style="padding: 12px 15px; border-radius: 20px; border: 1px solid #ccc; background: #e0e0e0; color: #333; outline: none; width: 100%; box-sizing: border-box; font-family: 'Poppins', sans-serif;">
+                <button type="submit" style="background: #cc0000; color: white; border: none; padding: 10px 20px; border-radius: 20px; font-weight: bold; cursor: pointer; width: 50%; align-self: center; font-family: 'Poppins', sans-serif;">Submit</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- 💡 MODAL ABOUT -->
+    <!-- ========================================== -->
+    <div id="modalAbout" class="modal-overlay" style="display: none;">
+        <div class="modal-content" style="text-align: center;">
+            <span class="modal-close" id="closeAbout">&times;</span>
+            <div style="margin-bottom: 15px;">
+                <!-- Logo Aplikasi -->
+                <div style="background: #cc0000; color: white; width: 60px; height: 60px; border-radius: 16px; display: inline-flex; justify-content: center; align-items: center; font-size: 30px;">
+                   <i class="fa-solid fa-music"></i>
+                </div>
+                <h2 style="color: #cc0000; margin: 10px 0 5px 0; font-size: 22px;">NiyYT</h2>
+            </div>
+
+            <!-- 💡 Teks About (Bukan Lorem Ipsum) -->
+            <p style="color: #333; font-size: 13px; line-height: 1.6; text-align: justify; margin-bottom: 15px;">
+                <strong>NiyYT (YT Audio Mixer)</strong> adalah pemutar media cerdas yang dirancang untuk memberikan pengalaman kontrol audio tingkat lanjut layaknya studio profesional.
+                <br><br>
+                Dilengkapi dengan mesin <i>Digital Signal Processing</i> (DSP), aplikasi ini memungkinkan Anda mengatur efek suara seperti <i>Graphic Equalizer</i>, <i>Delay</i>, <i>Reverb</i>, dan <i>Distorsi</i> secara langsung. Dibangun untuk efisiensi maksimal, NiyYT mampu menghemat kuota dengan mengekstrak jalur audio murni, serta mendukung pemutaran fail lokal secara luring.
+            </p>
+
+            <div style="margin-top: 15px; font-size: 11px; color: #888; font-weight: 600;">
+                Versi 1.0.0 &copy; 2026 NiyProject
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>
+
+
+
+-------------------------------------------------------------------------------------
+frontend/src/api/youtube.js
+-------------------------------------------------------------------------------------
+    // 💡 1. Baca status mode dari localStorage (default ke 'video')
+    const currentMode = localStorage.getItem('yt_player_mode') || 'video';
+
+    const response = await fetch('/get-direct-url', {                                            method: 'POST',
+        headers: { 'Content-Type': 'application/json' },                                         // 💡 2. Sisipkan status mode ke dalam payload pengiriman                                body: JSON.stringify({
+            url: youtubeUrl,
+            mode: currentMode                                                                    })                                                                                   });                                                                                      if (!response.ok) throw new Error('Gagal mengekstrak URL');                              return await response.json();
+}
+
+
+
+
+-------------------------------------------------------------------------------------
+frontend/src/audio/engine.js
+-------------------------------------------------------------------------------------
+export const eqFrequencies = [
+    25, 31, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500, 630,
+    800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300, 8000, 10000, 12500, 16000, 20000
+];
+
+let audioCtx, sourceNode, distortionNode, echoDelayNode, feedbackGain, wetGain, echoFilter;
+let splitter, merger, haasDelayL, haasDelayR, gainL, gainR;
+let eqNodesL = [], eqNodesR = [];
+let isSetup = false;
+
+export function initAudioEngine(videoElement) {
+    // Biar gak ke-trigger dua kali kalau user ngeklik berulang
+    if (isSetup) return;
+
+    // Inisialisasi AudioContext (Mesin Utama)
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    sourceNode = audioCtx.createMediaElementSource(videoElement);
+
+    // Komponen Routing Utama
+    splitter = audioCtx.createChannelSplitter(2);
+    merger = audioCtx.createChannelMerger(2);
+    haasDelayL = audioCtx.createDelay();
+    haasDelayR = audioCtx.createDelay();
+    gainL = audioCtx.createGain();
+    gainR = audioCtx.createGain();
+
+    // Inisialisasi 30 Filter Kiri & Kanan (Graphic EQ)
+    const createFilters = () => eqFrequencies.map((freq, index) => {
+        let filter = audioCtx.createBiquadFilter();
+        // Ujung kiri lowpass, ujung kanan highpass, tengahnya peaking (bandpass)
+        filter.type = (index === 0) ? "lowshelf" : (index === eqFrequencies.length - 1) ? "highshelf" : "peaking";
+        filter.frequency.value = freq;
+        filter.gain.value = 0; // Default flat 0 dB
+        if (filter.type === "peaking") filter.Q.value = 4.31;
+        return filter;
+    });
+
+    eqNodesL = createFilters();
+    eqNodesR = createFilters();
+
+    // Efek Distorsi (Fuzz)
+    distortionNode = audioCtx.createWaveShaper();
+    distortionNode.curve = makeDistortionCurve(0);
+
+    // Efek Echo Delay (Analog Tape Style)
+    echoDelayNode = audioCtx.createDelay(2.0);
+
+    // 👇 TAMBAHKAN BARIS INI BUNG (Misal kita set pantulan tiap 400ms)
+    echoDelayNode.delayTime.value = 0.4;
+
+    feedbackGain = audioCtx.createGain();
+    wetGain = audioCtx.createGain();
+    feedbackGain.gain.value = 0;
+    wetGain.gain.value = 0;
+
+    // Filter peredam untuk Analog Delay (Rahasia suara pantulan "warm")
+    echoFilter = audioCtx.createBiquadFilter();
+    echoFilter.type = 'lowpass';
+    echoFilter.frequency.value = 2000; // Frekuensi di atas 2kHz dipotong
+
+    // ==========================================
+    // ROUTING KABEL AUDIO (DUAL MONO)
+    // ==========================================
+    sourceNode.connect(splitter);
+
+    // --- JALUR 1 (KIRI) ---
+    splitter.connect(haasDelayL, 0);
+    haasDelayL.connect(gainL);
+    gainL.connect(eqNodesL[0]);
+    for(let i = 0; i < eqNodesL.length - 1; i++) {
+        eqNodesL[i].connect(eqNodesL[i+1]);
+    }
+    eqNodesL[eqNodesL.length - 1].connect(merger, 0, 0);
+
+    // --- JALUR 2 (KANAN) ---
+    splitter.connect(haasDelayR, 1);
+    haasDelayR.connect(gainR);
+    gainR.connect(eqNodesR[0]);
+    for(let i = 0; i < eqNodesR.length - 1; i++) {
+        eqNodesR[i].connect(eqNodesR[i+1]);
+    }
+    eqNodesR[eqNodesR.length - 1].connect(merger, 0, 1);
+
+    // --- GABUNGAN & DISTORSI ---
+    merger.connect(distortionNode);
+    distortionNode.connect(audioCtx.destination); // Output bersih (Dry) ke speaker
+
+    // --- JALUR ECHO (ANALOG TAPE STYLE) ---
+    distortionNode.connect(echoDelayNode); // Cabang suara masuk ke delay
+
+    // Looping Feedback (Pantulan)
+    echoDelayNode.connect(echoFilter);     // 1. Suara delay masuk ke filter lowpass dulu
+    echoFilter.connect(feedbackGain);      // 2. Setelah difilter, masuk ke gain (volume pantulan)
+    feedbackGain.connect(echoDelayNode);   // 3. Dilempar balik ke delay (terjadi pengulangan)
+
+    // Output basah (Wet) ke speaker
+    echoDelayNode.connect(wetGain);
+    wetGain.connect(audioCtx.destination);
+
+    // Aktifkan pendengar event dari UI
+    setupEventListeners();
+    isSetup = true;
+}
+
+// Fungsi pembuat kurva distorsi
+function makeDistortionCurve(amount) {
+    let k = amount, n = 44100, curve = new Float32Array(n), deg = Math.PI/180;
+    for (let i = 0; i < n; ++i) {
+        let x = i * 2 / n - 1;
+        curve[i] = (3 + k) * x * 20 * deg / (Math.PI + k * Math.abs(x));
+    }
+    return curve;
+}
+
+// ==========================================
+// PENDENGAR CUSTOM EVENTS DARI UI
+// ==========================================
+function setupEventListeners() {
+    // Event Graphic EQ
+    document.addEventListener('audio:eq-changed', (e) => {
+        const { channel, index, value } = e.detail;
+        if (channel === 'L' && eqNodesL[index]) eqNodesL[index].gain.value = value;
+        if (channel === 'R' && eqNodesR[index]) eqNodesR[index].gain.value = value;
+    });
+
+    // Event Haas Delay Kiri & Kanan
+    document.addEventListener('audio:delay-l-changed', (e) => {
+        haasDelayL.delayTime.value = e.detail.value / 1000;
+    });
+    document.addEventListener('audio:delay-r-changed', (e) => {
+        haasDelayR.delayTime.value = e.detail.value / 1000;
+    });
+
+    // Event Distorsi
+    document.addEventListener('audio:distortion-changed', (e) => {
+        distortionNode.curve = makeDistortionCurve(e.detail.value * 4);
+    });
+
+    // Event Panning
+    document.addEventListener('audio:panning-changed', (e) => {
+        let val = e.detail.value;
+        gainL.gain.value = Math.min(1, 1 - val);
+        gainR.gain.value = Math.min(1, 1 + val);
+    });
+
+    // Event Echo Delay (Mantul)
+    document.addEventListener('audio:echo-changed', (e) => {
+        feedbackGain.gain.value = e.detail.value / 100;
+        wetGain.gain.value = e.detail.value == 0 ? 0 : (e.detail.value / 100) + 0.2;
+    });
+}
+
+
+
+-------------------------------------------------------------------------------------
+frontend/src/main.js
+-------------------------------------------------------------------------------------
+import { renderVideoCard } from './components/Video/VideoCard';
+import { initDelayPedal } from './components/Effects/DelayPedal';
+import { initPanning } from './components/Effects/Panning';
+import { initGraphicEQ } from './components/Effects/GraphicEQ';
+import { initDistortion } from './components/Effects/Distortion';
+import { initEchoDelay } from './components/Effects/EchoDelay';
+import { initReverbPedal } from './components/Effects/ReverbPedal';
+
+let audioCtx, isSetup = false;
+
+// ==========================================
+// LOGIKA TAB NAVIGASI (BOTTOM NAV)
+// ==========================================
+const btnNavSearch = document.getElementById('btn-nav-search');
+const btnNavMixer = document.getElementById('btn-nav-mixer');
+const tabSearch = document.getElementById('tab-search');
+const tabMixer = document.getElementById('tab-mixer');
+
+btnNavSearch.addEventListener('click', () => {
+    btnNavSearch.classList.add('active');
+    btnNavMixer.classList.remove('active');
+    tabSearch.classList.add('active');
+    tabMixer.classList.remove('active');
+});
+
+btnNavMixer.addEventListener('click', () => {
+    btnNavMixer.classList.add('active');
+    btnNavSearch.classList.remove('active');
+    tabMixer.classList.add('active');
+    tabSearch.classList.remove('active');
+});
+
+// ==========================================
+// LOGIKA PENCARIAN (TOP NAV) & SESSION CACHE
+// ==========================================
+const searchForm = document.getElementById('searchForm');
+const searchInput = document.getElementById('searchInput');
+const searchResults = document.getElementById('search-results');
+const searchStatus = document.getElementById('search-status');
+
+// 💡 FUNGSI RENDER DIPISAH BIAR BISA DIPANGGIL ULANG OLEH CACHE
+const renderVideoList = (videos) => {
+    searchResults.innerHTML = "";
+    searchStatus.innerText = videos.length === 0 ? "Tidak ada hasil ditemukan." : "";
+
+    const currentPlayingUrl = localStorage.getItem('yt_cached_url');
+
+    videos.forEach(video => {
+        const card = document.createElement('div');
+        card.className = 'video-card';
+        card.dataset.url = video.url;
+
+        if (video.url === currentPlayingUrl) {
+            card.classList.add('playing-now');
+        }
+
+        card.innerHTML = `
+            <div class="thumb-wrapper">
+                <img src="${video.image || video.thumbnail}" class="video-thumb" alt="Thumbnail" loading="lazy">
+                <div class="play-overlay">▶</div>
+            </div>
+            <div class="video-info">
+                <div class="video-title">${video.title}</div>
+                <div class="video-author">${video.author.name} • ${video.timestamp}</div>
+            </div>
+        `;
+
+        card.addEventListener('click', () => {
+            document.dispatchEvent(new CustomEvent('app:play-url', {
+                detail: {
+                    url: video.url,
+                    thumbnail: video.image || video.thumbnail,
+                    title: video.title
+                }
+            }));
+        });
+
+        searchResults.appendChild(card);
+    });
+
+    // ==========================================
+    // 💡 TAMBAHAN BARU: KOTAK PAGINASI BAWAH
+    // ==========================================
+    if (videos.length > 0) {
+        // Tarik data kita lagi di halaman berapa
+        const currentPage = parseInt(sessionStorage.getItem('yt_current_page')) || 1;
+        const lastKeyword = sessionStorage.getItem('yt_last_search_keyword') || "";
+
+        const paginationWrapper = document.createElement('div');
+        paginationWrapper.style.cssText = "display: flex; justify-content: center; align-items: center; gap: 20px; margin-top: 30px; padding-bottom: 30px;";
+
+        // 1. Tombol Prev Page
+        const btnPrev = document.createElement('button');
+        btnPrev.className = 'btn-control';
+        btnPrev.innerHTML = '<i class="fa-solid fa-chevron-left"></i> Prev Page';
+
+        // Matikan tombol kalau udah di halaman 1
+        if (currentPage === 1) {
+            btnPrev.style.opacity = "0.4";
+            btnPrev.style.cursor = "not-allowed";
+        } else {
+            btnPrev.onclick = () => {
+                // Parameter ketiga 'false' biar ga langsung auto-play
+                executeSearch(lastKeyword, currentPage - 1, false);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            };
+        }
+
+        // 2. Teks Indikator Halaman
+        const pageText = document.createElement('span');
+        pageText.style.cssText = "color: #fff; font-size: 14px; font-weight: bold;";
+        pageText.innerText = `Page ${currentPage}`;
+
+        // 3. Tombol Next Page
+        const btnNext = document.createElement('button');
+        btnNext.className = 'btn-control';
+        btnNext.innerHTML = 'Next Page <i class="fa-solid fa-chevron-right"></i>';
+        btnNext.onclick = () => {
+            // Parameter ketiga 'false' biar ga langsung auto-play
+            executeSearch(lastKeyword, currentPage + 1, false);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        };
+
+        paginationWrapper.appendChild(btnPrev);
+        paginationWrapper.appendChild(pageText);
+        paginationWrapper.appendChild(btnNext);
+
+        searchResults.appendChild(paginationWrapper);
+    }
+};
+
+// ==========================================
+// 💡 MODIFIKASI FUNGSI PENCARIAN (MENDUKUNG MUNDUR HALAMAN)
+// ==========================================
+// Ubah parameter ketiga jadi autoPlayAction ('first', 'last', atau false)
+const executeSearch = async (keyword = "", page = 1, autoPlayAction = false) => {
+    searchStatus.innerText = `Memuat halaman ${page}...`;
+    searchResults.innerHTML = "";
+
+    // Tampilkan 5 kartu skeleton
+    for(let i = 0; i < 5; i++) {
+        searchResults.innerHTML += `
+            <div class="video-card skeleton-wrapper">
+                <div class="thumb-wrapper skeleton" style="width: 100%; aspect-ratio: 16/9; border-radius: 8px;"></div>
+                <div class="video-info" style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
+                    <div class="skeleton" style="width: 90%; height: 16px; border-radius: 4px;"></div>
+                    <div class="skeleton" style="width: 60%; height: 14px; border-radius: 4px;"></div>
+                </div>
+            </div>
+        `;
+    }
+
+    try {
+        const url = keyword
+            ? `/search?q=${encodeURIComponent(keyword)}&page=${page}`
+            : `/trending?page=${page}`;
+
+        const response = await fetch(url);
+        const videos = await response.json();
+
+        if (videos.length === 0) {
+            searchStatus.innerText = "Daftar putar sudah habis bung! 🎵";
+            searchResults.innerHTML = "";
+            return;
+        }
+
+        sessionStorage.setItem('yt_last_search_keyword', keyword);
+        sessionStorage.setItem('yt_last_search_results', JSON.stringify(videos));
+        sessionStorage.setItem('yt_current_page', page);
+
+        renderVideoList(videos);
+
+        // 💡 LOGIKA EKSEKUSI AUTO-PLAY (Pilih Atas atau Bawah)
+        if (autoPlayAction && videos.length > 0) {
+            setTimeout(() => {
+                const cards = searchResults.querySelectorAll('.video-card');
+                if (autoPlayAction === 'first' && cards.length > 0) {
+                    cards[0].click(); // Putar urutan paling atas
+                } else if (autoPlayAction === 'last' && cards.length > 0) {
+                    cards[cards.length - 1].click(); // Putar urutan paling bawah!
+                }
+            }, 800);
+        }
+    } catch (err) {
+        searchStatus.innerText = "Gagal mengambil data dari server.";
+        searchResults.innerHTML = "";
+    }
+};
+
+
+// ==========================================
+// EVENT LISTENER FORM PENCARIAN
+// ==========================================
+searchForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const keyword = searchInput.value.trim();
+    if (!keyword) return;
+
+    const isLink = keyword.includes('youtube.com/') || keyword.includes('youtu.be/');
+
+    if (isLink) {
+        searchStatus.innerText = "Memuat video dari link...";
+        searchResults.innerHTML = "";
+
+        let videoId = "";
+        if(keyword.includes('youtu.be/')) {
+            videoId = keyword.split('youtu.be/')[1].split('?')[0];
+        } else if (keyword.includes('youtube.com/watch')) {
+            videoId = new URLSearchParams(keyword.split('?')[1]).get('v');
+        }
+        const thumbUrl = videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : '';
+
+        document.dispatchEvent(new CustomEvent('app:play-url', {
+            detail: { url: keyword, thumbnail: thumbUrl }
+        }));
+        return;
+    }
+
+    // Panggil fungsi eksekusi pencarian
+    executeSearch(keyword, 1);
+});
+
+
+// ==========================================
+// AUTO LOAD & REKOMENDASI SAAT WEB DIBUKA
+// ==========================================
+document.addEventListener('DOMContentLoaded', () => {
+    const savedKeyword = sessionStorage.getItem('yt_last_search_keyword');
+    const savedResults = sessionStorage.getItem('yt_last_search_results');
+
+    if (savedResults) {
+        // 1. Kalau ada cache (user habis refresh), render ulang dari memori
+        searchInput.value = savedKeyword || "";
+        try {
+            const videos = JSON.parse(savedResults);
+            renderVideoList(videos);
+        } catch (e) {
+            executeSearch("", 1); // Fallback ke trending murni
+        }
+    } else {
+        // 2. 💡 KALAU BARU MASUK & KOSONG, PANGGIL TRENDING MURNI!
+        // Panggil tanpa parameter biar executeSearch() nembak ke /trending
+        executeSearch("", 1);
+    }
+});
+
+// ==========================================
+// 💡 LOGIKA UPDATE UI INSTAN SAAT LAGU DI-KLIK
+// ==========================================
+document.addEventListener('app:play-url', (e) => {
+    const playedUrl = e.detail.url;
+    const allCards = Array.from(document.querySelectorAll('.video-card'));
+
+    allCards.forEach(card => {
+        if (card.dataset.url === playedUrl) {
+            card.classList.add('playing-now');
+        } else {
+            card.classList.remove('playing-now');
+        }
+    });
+
+    // 💡 LOGIKA TOMBOL PREV ABU-ABU (DISABLED)
+    const btnPrev = document.getElementById('btnPrev');
+    if (btnPrev) {
+        const currentPage = parseInt(sessionStorage.getItem('yt_current_page')) || 1;
+        const playingIndex = allCards.findIndex(card => card.dataset.url === playedUrl);
+
+        // Kalau di Halaman 1 DAN lagunya urutan pertama (Index 0), matikan tombol Prev!
+        if (currentPage === 1 && playingIndex === 0) {
+            btnPrev.classList.add('disabled-btn');
+        } else {
+            // Selain itu, nyalakan lagi tombolnya
+            btnPrev.classList.remove('disabled-btn');
+        }
+    }
+});
+
+
+// ==========================================
+// 💡 LOGIKA AUTO PLAY NEXT / PAGINASI MAJU
+// ==========================================
+document.addEventListener('app:play-next', () => {
+    const allCards = Array.from(document.querySelectorAll('.video-card'));
+    const currentUrl = localStorage.getItem('yt_cached_url');
+    const currentIndex = allCards.findIndex(card => card.dataset.url === currentUrl);
+
+    if (currentIndex !== -1 && currentIndex < allCards.length - 1) {
+        const nextCard = allCards[currentIndex + 1];
+        setTimeout(() => nextCard.click(), 1000);
+    } else if (currentIndex !== -1 && currentIndex === allCards.length - 1) {
+        console.log("Memuat halaman berikutnya...");
+        searchStatus.innerText = "Memuat kelanjutan daftar putar... 🔄";
+
+        const lastKeyword = sessionStorage.getItem('yt_last_search_keyword') || "";
+        const currentPage = parseInt(sessionStorage.getItem('yt_current_page')) || 1;
+        const nextPage = currentPage + 1;
+
+        // Tembak halaman baru, minta putar lagu PERTAMA ('first')
+        executeSearch(lastKeyword, nextPage, 'first');
+    }
+});
+
+// ==========================================
+// 💡 LOGIKA AUTO PLAY PREV / PAGINASI MUNDUR
+// ==========================================
+document.addEventListener('app:play-prev', () => {
+    const allCards = Array.from(document.querySelectorAll('.video-card'));
+    const currentUrl = localStorage.getItem('yt_cached_url');
+    const currentIndex = allCards.findIndex(card => card.dataset.url === currentUrl);
+    const currentPage = parseInt(sessionStorage.getItem('yt_current_page')) || 1;
+
+    if (currentIndex > 0) {
+        // AMAN: Mundur 1 urutan di layar yang sama
+        const prevCard = allCards[currentIndex - 1];
+        prevCard.click();
+    } else if (currentIndex === 0 && currentPage > 1) {
+        // 💡 JURUS MUNDUR HALAMAN!
+        console.log("Mencapai awal daftar. Memuat halaman sebelumnya...");
+        searchStatus.innerText = "Memuat halaman sebelumnya... 🔄";
+
+        const lastKeyword = sessionStorage.getItem('yt_last_search_keyword') || "";
+        const prevPage = currentPage - 1;
+
+        // Tembak halaman sebelumnya, minta putar lagu TERAKHIR ('last')
+        executeSearch(lastKeyword, prevPage, 'last');
+    }
+});
+
+renderVideoCard('video-card-container', (videoElement) => {
+
+    if (isSetup) return;
+
+    // 1. Inisialisasi Mesin Utama
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const sourceNode = audioCtx.createMediaElementSource(videoElement);
+
+    // Bangunkan mesin audio setiap kali ada klik di layar
+    document.body.addEventListener('click', () => {
+        if (audioCtx && audioCtx.state === 'suspended') {
+            audioCtx.resume();
+        }
+    });
+
+    // 2. Pemisah Jalur (Splitter ke L & R)
+    const splitter = audioCtx.createChannelSplitter(2);
+    sourceNode.connect(splitter);
+
+    // Bikin titik colokan awal biar gampang dioper
+    const chL = audioCtx.createGain();
+    const chR = audioCtx.createGain();
+    splitter.connect(chL, 0);
+    splitter.connect(chR, 1);
+
+    // ==========================================
+    // 3. ESTAFET KABEL (DAISY CHAIN)
+    // ==========================================
+
+    // A. Masuk ke Delay (Haas Effect)
+    const delayOut = initDelayPedal(audioCtx, chL, chR, 'delay-pedal-container');
+
+    // B. Masuk ke Panning
+    const panOut = initPanning(audioCtx, delayOut.outL, delayOut.outR, 'panning-container');
+
+    // C. Masuk ke 30-Band Graphic EQ (Kiri & Kanan)
+    const eqOut = initGraphicEQ(audioCtx, panOut.outL, panOut.outR, 'eq-container');
+
+    // 4. Penggabung Jalur (Merger L & R jadi Mono/Stereo Gabungan)
+    const merger = audioCtx.createChannelMerger(2);
+    eqOut.outL.connect(merger, 0, 0);
+    eqOut.outR.connect(merger, 0, 1);
+
+    // D. Masuk ke Distortion
+    const distOut = initDistortion(audioCtx, merger, 'distortion-container');
+
+    // E. Masuk ke Echo Ping-Pong
+    const echoOut = initEchoDelay(audioCtx, distOut, 'echo-delay-container');
+
+    // F. Masuk ke True Reverb (Tercelup Gema Ruangan)
+    const finalOut = initReverbPedal(audioCtx, echoOut, 'reverb-container');
+
+    // 5. Output Akhir dicolok ke Speaker HP/Browser
+    finalOut.connect(audioCtx.destination);
+
+
+    isSetup = true;
+});
+
+// ==========================================
+// 💡 LOGIKA DROPDOWN MENU & ICON TOGGLE
+// ==========================================
+const btnMoreMenu = document.getElementById('btnMoreMenu');
+const dropdownMenu = document.getElementById('dropdownMenu');
+const menuIcon = btnMoreMenu.querySelector('i'); // Tangkap elemen icon-nya
+
+// 1. Toggle Buka/Tutup saat diklik
+btnMoreMenu.addEventListener('click', (e) => {
+    e.stopPropagation();
+
+    const isVisible = dropdownMenu.style.display === 'block';
+
+    if (isVisible) {
+        // Tutup menu & balik ke titik tiga
+        dropdownMenu.style.display = 'none';
+        menuIcon.className = 'fa-solid fa-ellipsis-vertical';
+    } else {
+        // Buka menu & ganti icon jadi X
+        dropdownMenu.style.display = 'block';
+        menuIcon.className = 'fa-solid fa-xmark';
+    }
+});
+
+// 2. Otomatis tutup menu kalau user klik di luar area
+document.addEventListener('click', (e) => {
+    if (dropdownMenu.style.display === 'block' && !dropdownMenu.contains(e.target)) {
+        dropdownMenu.style.display = 'none';
+        menuIcon.className = 'fa-solid fa-ellipsis-vertical'; // Balikin icon saat ditutup paksa
+    }
+});
+
+
+// ==========================================
+// 💡 FITUR OFFLINE: BACA FOLDER LOCAL STORAGE
+// ==========================================
+const btnMenuOffline = document.getElementById('btnMenuOffline');
+// 💡 HAPUS searchResults dan searchStatus dari sini, pakai yang dari atas
+
+btnMenuOffline.addEventListener('click', async () => {
+    // 1. Tutup menu saat diklik
+    dropdownMenu.style.display = 'none';
+    menuIcon.className = 'fa-solid fa-ellipsis-vertical';
+
+    try {
+        // 2. Minta izin ke user untuk memilih folder
+        const dirHandle = await window.showDirectoryPicker();
+        const localSongs = [];
+
+        searchStatus.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Membaca folder...';
+
+        // 3. Scan semua file di dalam folder tersebut
+        for await (const entry of dirHandle.values()) {
+            if (entry.kind === 'file') {
+                const file = await entry.getFile();
+                // Saring hanya file audio / MP4
+                if (file.type.startsWith('audio/') || file.type.startsWith('video/') ||
+                    file.name.endsWith('.mp3') || file.name.endsWith('.m4a') || file.name.endsWith('.wav')) {
+
+                    localSongs.push({
+                        title: file.name.replace(/\.[^/.]+$/, ""), // Hapus tulisan .mp3 dari judul
+                        fileHandle: entry, // 💡 Ini nyawa utamanya
+                        isLocal: true,
+                        author: { name: 'Penyimpanan Lokal' }
+                    });
+                }
+            }
+        }
+
+        if (localSongs.length === 0) {
+            searchStatus.innerText = "Folder ini kosong dari file audio bung.";
+            return;
+        }
+
+        // 4. Render (Cetak) daftar lagu ke layar bawah
+        searchStatus.innerText = `Menampilkan ${localSongs.length} lagu offline`;
+        searchResults.innerHTML = ''; // Bersihkan list YouTube sebelumnya
+
+        localSongs.forEach((song, index) => {
+            const card = document.createElement('div');
+            // 💡 FIX 1: Gunakan class 'video-card' agar masuk hitungan antrean Prev/Next
+            card.className = 'video-card result-card';
+
+            // 💡 FIX 2: Simpan nama judul/file di dataset sebagai pengganti URL
+            card.dataset.url = song.title;
+
+            card.style.cssText = 'padding: 12px; border-bottom: 1px solid #333; cursor: pointer; display: flex; align-items: center; gap: 12px;';
+
+            card.innerHTML = `
+                <div style="background: #333; width: 50px; height: 50px; border-radius: 8px; display: flex; justify-content: center; align-items: center; color: #aaa;">
+                    <i class="fa-solid fa-music fa-lg"></i>
+                </div>
+                <div style="flex: 1; overflow: hidden;">
+                    <div style="color: #fff; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; overflow: hidden;">${song.title}</div>
+                    <div style="color: #aaa; font-size: 12px; margin-top: 4px;">
+                        <i class="fa-solid fa-folder"></i> ${song.author.name}
+                    </div>
+                </div>
+            `;
+
+            card.addEventListener('click', () => {
+                document.dispatchEvent(new CustomEvent('app:play-url', {
+                    detail: {
+                        title: song.title,
+                        isLocal: true,
+                        fileHandle: song.fileHandle,
+                        thumbnail: 'https://via.placeholder.com/300x169/222222/FFFFFF?text=Offline+Audio'
+                    }
+                }));
+            });
+
+            searchResults.appendChild(card);
+        });
+
+
+    } catch (err) {
+        console.log("Batal pilih folder / Akses ditolak:", err);
+        searchStatus.innerText = "Ketik judul lagu di atas untuk mencari...";
+    }
+});
+
+// ==========================================
+// 💡 LOGIKA MODAL PLAYLIST & ABOUT
+// ==========================================
+const modalPlaylist = document.getElementById('modalPlaylist');
+const modalAbout = document.getElementById('modalAbout');
+const btnMenuPlaylist = document.getElementById('btnMenuPlaylist');
+const btnMenuAbout = document.getElementById('btnMenuAbout');
+const closePlaylist = document.getElementById('closePlaylist');
+const closeAbout = document.getElementById('closeAbout');
+
+// Buka Modal Playlist
+btnMenuPlaylist.addEventListener('click', () => {
+    dropdownMenu.style.display = 'none'; // Tutup dropdown
+    menuIcon.className = 'fa-solid fa-ellipsis-vertical';
+    modalPlaylist.style.display = 'flex';
+});
+
+// Buka Modal About
+btnMenuAbout.addEventListener('click', () => {
+    dropdownMenu.style.display = 'none'; // Tutup dropdown
+    menuIcon.className = 'fa-solid fa-ellipsis-vertical';
+    modalAbout.style.display = 'flex';
+});
+
+// Fungsi Tutup Modal via Tombol X
+closePlaylist.addEventListener('click', () => modalPlaylist.style.display = 'none');
+closeAbout.addEventListener('click', () => modalAbout.style.display = 'none');
+
+// Fungsi Tutup Modal jika area luar (hitam transparan) diklik
+window.addEventListener('click', (e) => {
+    if (e.target === modalPlaylist) modalPlaylist.style.display = 'none';
+    if (e.target === modalAbout) modalAbout.style.display = 'none';
+});
+
+// Handle Tombol Submit Playlist
+const playlistForm = document.getElementById('playlistForm');
+playlistForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const playlistUrl = document.getElementById('playlistInput').value.trim();
+
+    if(!playlistUrl) return;
+
+    // 1. Tutup modal & bersihkan input agar rapi
+    modalPlaylist.style.display = 'none';
+    document.getElementById('playlistInput').value = '';
+
+    // 2. Beri indikator loading ke user di list bawah
+    searchStatus.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Memuat daftar lagu playlist...';
+    searchResults.innerHTML = "";
+
+    try {
+        // 3. Tembak endpoint backend
+        const response = await fetch(`/playlist?url=${encodeURIComponent(playlistUrl)}`);
+
+        if (!response.ok) throw new Error();
+
+        const videos = await response.json();
+
+        // 4. Simpan ke sessionStorage agar tidak hilang saat di-refresh (opsional)
+        sessionStorage.setItem('yt_last_search_keyword', 'Custom Playlist');
+        sessionStorage.setItem('yt_last_search_results', JSON.stringify(videos));
+        sessionStorage.setItem('yt_current_page', 1);
+
+        // 5. Cetak lagu-lagunya ke list utama bawah menggunakan fungsi andalan lu!
+        searchStatus.innerText = `Menampilkan ${videos.length} lagu dari playlist`;
+        renderVideoList(videos);
+
+    } catch (err) {
+        console.error("Gagal load playlist:", err);
+        searchStatus.innerText = "Gagal mengambil playlist. Pastikan link valid / playlist tidak di-private bung.";
+        searchResults.innerHTML = "";
+    }
+});
+
+
+
+
+-------------------------------------------------------------------------------------
+frontend/src/style.css
+-------------------------------------------------------------------------------------
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: system-ui, sans-serif;
+    background: #121212;
+    color: #fff;
+    padding-top: 60px; /* Jarak untuk top nav */
+    padding-bottom: 70px; /* Jarak untuk bottom nav */                                   }
+
+/* TOP NAV */
+.top-nav {
+    position: fixed; top: 0; left: 0; right: 0; height: 60px;
+    background: #0f0f0f; border-bottom: 1px solid #333;
+    display: flex; align-items: center; padding: 0 15px; z-index: 99999 !important;
+}
+.logo-box { background: #ff0000; padding: 8px 12px; border-radius: 8px; margin-right: 15px; }
+.search-box { display: flex; flex: 1; background: #fff; border-radius: 20px; overflow: hidden; }
+.search-box input { flex: 1; padding: 10px 15px; border: none; outline: none; color: #000; }
+.search-btn { background: #f0f0f0; border: none; padding: 0 15px; cursor: pointer; }
+
+/* BOTTOM NAV */
+.bottom-nav {
+    position: fixed; bottom: 0; left: 0; right: 0; height: 60px;
+    background: #0f0f0f; border-top: 1px solid #333;
+    display: flex; justify-content: space-around; align-items: center; z-index: 100;
+}
+.nav-item {                                                                                  background: none; border: none; color: #888; display: flex; flex-direction: column;
+    align-items: center; cursor: pointer; font-size: 12px; width: 50%;
+}
+.nav-item.active { color: #ff0000; }
+.nav-icon { font-size: 20px; margin-bottom: 4px; }
+
+/* TAB SYSTEM */
+.tab-section { display: none; padding: 15px; }
+.tab-section.active { display: block; }
+.status-text { color: #aaa; text-align: center; margin-top: 20px; }
+
+/* SEARCH RESULTS CARDS */
+.results-grid { display: flex; flex-direction: column; gap: 15px; margin-top: 15px; }
+.video-card {
+    background: #1e1e1e; border-radius: 8px; overflow: hidden; display: flex;
+    flex-direction: column; cursor: pointer; border: 1px solid #333; transition: 0.2s;
+}
+.video-card:active { transform: scale(0.98); }
+.video-thumb { width: 100%; height: 200px; object-fit: cover; background: #000; }
+.video-info { padding: 15px; }
+.video-title { font-size: 14px; font-weight: bold; margin-bottom: 5px; line-height: 1.4; }
+.video-author { font-size: 12px; color: #aaa; }
+
+/* STYLING TRACK EFEK PEDALBOARD */
+.track {
+    margin-bottom: 15px;
+    background: #1a1a1a;
+    padding: 15px;
+    border-radius: 6px;
+    border: 1px solid #333;
+}
+.track label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 14px;
+    color: #00C851;
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+input[type="range"].horizontal {
+    width: 100%;
+    cursor: pointer;
+    accent-color: #ff0000;
+    margin-top: 5px;
+}
+
+/* Update Font Body */
+body {
+    font-family: 'Poppins', system-ui, sans-serif; /* Pindah ke Poppins */
+    background: #121212;
+    color: #fff;
+    padding-top: 60px;
+    padding-bottom: 70px;
+}
+
+/* Styling untuk Logo di Top Nav */
+.logo-box {
+    /* Hapus background merah yang lama kalau lu mau logo PNG-nya nyatu sama background item */
+    /* background: #ff0000; */
+    padding: 5px;
+    margin-right: 15px;
+    display: flex;
+    align-items: center;
+}
+.custom-logo {
+    width: 32px;  /* Sesuaikan lebarnya bung */
+    height: 32px; /* Sesuaikan tingginya */
+    object-fit: contain; /* Biar rasio 3x2 lu gak penyok */
+}
+
+/* Styling untuk Icon di Bottom Nav */
+.custom-nav-icon {
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
+    margin-bottom: 4px;
+
+    /* Trik keren: Bikin iconnya abu-abu saat gak aktif */
+    filter: grayscale(100%) opacity(0.6);
+    transition: 0.3s ease;
+}
+
+/* Kalau tombolnya lagi active, iconnya balik ke warna asli (full color) */
+.nav-item.active .custom-nav-icon {
+    filter: none;
+}
+
+/* Update font tombol search biar ikon loop 🔍 sejajar */
+.search-btn {
+    background: #f0f0f0;
+    border: none;
+    padding: 0 15px;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+/* Wadah logonya kita bikin transparan, gak ada background merah lagi */
+.logo-box {
+    background: transparent; /* Pastikan ini transparan! */
+    padding: 0; /* Kurangi padding biar gak makan tempat */
+    margin-right: 15px;
+    display: flex;
+    align-items: center;
+}
+
+/* Gambar logonya kita sesuaikan ke rasio 3:2 */
+.custom-logo {
+    width: 48px;  /* Lebarnya kita besarin (rasio 3) */
+    height: 32px; /* Tingginya tetap (rasio 2) */
+    object-fit: contain;
+}
+
+/* ==========================================
+   WADAH THUMBNAIL & LOGO PLAY
+   ========================================== */
+.thumb-wrapper {
+    position: relative;
+    display: inline-block;
+    flex-shrink: 0;
+}
+
+/* Desain Logo Play Default (Tersembunyi) */
+.play-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: rgba(255, 0, 0, 0.6); /* Warna merah transparan ala YT */
+    color: white;
+    font-size: 60px;
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding-left: 10px;
+    opacity: 0; /* Sembunyikan di awal */
+    transition: opacity 0.3s ease;
+    z-index: 2;
+}
+
+/* ==========================================
+   STATUS PLAYING (MONOKROM, DISABLED, & MUNCUL PLAY)
+   ========================================== */
+.video-card.playing-now {
+    pointer-events: none; /* Mematikan klik total */
+    cursor: not-allowed;
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid #555; /* Border redup dipindah ke sini */
+}
+
+/* Bikin gambarnya aja yang monokrom, biar icon play tetep merah merona */
+.video-card.playing-now .video-thumb {
+    filter: grayscale(90%);
+    opacity: 0.5;
+}
+
+/* Munculkan logo play saat status playing */
+.video-card.playing-now .play-overlay {
+    opacity: 1;
+}
+
+
+/* ==========================================
+   LOADING SPINNER UNTUK VIDEO
+   ========================================== */
+.loading-spinner {
+    width: 50px;
+    height: 50px;
+    border: 5px solid rgba(255, 255, 255, 0.3);
+    border-top-color: #ff0000; /* Merah YouTube */
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* ==========================================
+   STICKY VIDEO PLAYER (KAYAK YOUTUBE ASLI)
+   ========================================== */
+#video-card-container {
+    position: sticky;
+    top: 60px; /* Ngunci di paling atas layar pas di-scroll */
+    z-index: 100; /* Kasta paling tinggi biar selalu di atas hasil pencarian */
+
+    /* 💡 WAJIB ADA BACKGROUND */
+    /* Sesuaikan dengan warna background web lu (misal hitam atau gelap) */
+    /* Kalau gak dikasih background, teks pencarian di bawahnya bakal nembus/transparan */
+    background-color: #121212;
+
+    /* Opsional: Biar transisinya mulus dan rapi kasih sedikit bayangan ke bawah */
+    box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.5);
+}
+
+/* ==========================================
+   MODE PiP AKTIF (KEMPESKAN CONTAINER)
+   ========================================== */
+.video-container.is-pip {
+    height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    opacity: 0 !important;
+    border: none !important;
+}
+
+
+/* ==========================================
+   SKELETON LOADING ANIMATION
+   ========================================== */
+.skeleton {
+    /* Gradasi gelap ke terang lalu ke gelap lagi */
+    background: linear-gradient(90deg, #2a2a2a 25%, #3a3a3a 50%, #2a2a2a 75%);
+    background-size: 200% 100%;
+    animation: skeletonShimmer 1.5s infinite linear;
+}
+
+@keyframes skeletonShimmer {
+    0% {
+        background-position: 200% 0;
+    }
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+/* Biar skeletonnya gak bisa diklik pas lagi loading */
+.skeleton-wrapper {
+    pointer-events: none;
+}
+
+
+/* ==========================================
+   💡 DROPDOWN MENU STYLES
+   ========================================== */
+
+/* Tombol Titik Tiga */
+.btn-more {
+    background: transparent;
+    border: none;
+    color: #fff;
+    font-size: 20px;
+    cursor: pointer;
+    padding: 8px 12px;
+    border-radius: 50%;
+    transition: background 0.2s;
+}
+
+.btn-more:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* Kotak Dropdown */
+.dropdown-menu {
+    position: absolute;
+    top: 110%; /* Muncul tepat di bawah tombol */
+    right: 0;
+    background-color: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 12px;
+    width: 160px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    z-index: 9999; /* Pastikan selalu paling depan */
+    overflow: hidden;
+    padding: 5px 0;
+}
+
+/* Item Menu di Dalam Dropdown */
+.menu-item {
+    padding: 12px 16px;
+    color: #e0e0e0;
+    font-size: 14px;
+    font-family: 'Poppins', system-ui, sans-serif;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: background 0.2s, color 0.2s;
+}
+
+.menu-item i {
+    font-size: 16px;
+    color: #aaa;
+}
+
+.menu-item:hover {
+    background-color: #333;
+    color: #fff;
+}
+
+.menu-item:hover i {
+    color: #fff;
+}
+
+/* Garis Pemisah (Opsional, biar rapi) */
+.menu-divider {
+    height: 1px;
+    background-color: #333;
+    margin: 4px 0;
+}
+
+
+/* ==========================================
+   💡 MODAL STYLES (PLAYLIST & ABOUT)
+   ========================================== */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7); /* Background gelap transparan */
+    z-index: 999999; /* Pastikan menimpa segalanya */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.modal-content {
+    background: #fff;
+    width: 85%;
+    max-width: 380px;
+    border-radius: 20px;
+    padding: 25px 20px;
+    position: relative;
+    box-sizing: border-box;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    animation: modalFadeIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+@keyframes modalFadeIn {
+    from { opacity: 0; transform: scale(0.8); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+.modal-close {
+    position: absolute;
+    top: 12px;
+    right: 18px;
+    font-size: 26px;
+    font-weight: bold;
+    color: #888;
+    cursor: pointer;
+    line-height: 1;
+    transition: color 0.2s;
+}
+
+.modal-close:hover {
+    color: #cc0000;
+}
+
+
+
+
+-------------------------------------------------------------------------------------
+frontend/src/components/Video/VideoCard.js
+-------------------------------------------------------------------------------------
+import './VideoCard.css';
+import { fetchDirectUrl } from '../../api/youtube';
+
+// Penampung handler di luar scope fungsi agar mudah dibersihkan
+// untuk mencegah memory leak saat komponen di-render ulang
+let playUrlHandler = null;
+
+export function renderVideoCard(containerId, onVideoReady) {
+    const container = document.getElementById(containerId);
+
+    // ==========================================
+    // UPDATE HTML: Wadah Video, Custom Controls & Mini Player
+    // ==========================================
+    container.innerHTML = `
+        <div class="video-container" id="vidContainer" style="display:none; padding: 15px; background: #1a1a1a; border-radius: 12px; margin-bottom: 20px;">
+
+            <div id="topHeaderBar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 0 5px;">
+                <div id="videoTitleDisplay" style="color: #fff; font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 15px; font-family: 'Poppins', system-ui, sans-serif;">
+                    Pilih lagu di bawah...
+                </div>
+                <div id="statusIconDisplay" style="color: #fff; font-size: 18px; flex-shrink: 0; cursor: pointer;">
+                    <i class="fa-solid fa-music"></i>
+                </div>
+            </div>
+
+            <div class="video-wrapper">
+                <div id="playerWrapper" style="position: relative; width: 100%; border-radius: 8px; overflow: hidden; background: #000; aspect-ratio: 16/9;">
+                    <video id="mainPlayer" crossorigin="anonymous" playsinline style="width:100%; height: 100%; display: block;"></video>
+
+                    <div id="thumbOverlay" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; background-color: #000; cursor: pointer;">
+                        <img id="overlayImage" src="" style="width: 100%; height: 100%; object-fit: cover; opacity: 0.5;">
+                        <div id="overlaySpinner" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); display: none;">
+                            <div class="loading-spinner"></div>
+                        </div>
+
+                        <div id="overlayErrorText" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); display: none; color: white; font-size: 20px; font-weight: bold; text-align: center; text-shadow: 0 2px 5px rgba(0,0,0,0.9); width: 90%;">
+                            Video tidak dapat diputar!
+                        </div>
+
+                        <div id="overlayStandbyPlay" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 60px; color: rgba(255,0,0,0.8); display: none; text-shadow: 0px 0px 10px black;">
+                            <i class="fa-solid fa-circle-play"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="custom-controls" style="margin-top: 15px;">
+                    <div class="progress-area" style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
+                        <span id="currentTimeDisplay" style="color: #fff; font-size: 12px; font-family: 'Poppins', system-ui, sans-serif;">00:00</span>
+                        <input type="range" id="progressBar" min="0" max="100" value="0" style="flex: 1; cursor: pointer; accent-color: #ff0000; height: 4px; border-radius: 2px; outline: none;">
+                        <span id="durationDisplay" style="color: #fff; font-size: 12px; font-family: 'Poppins', system-ui, sans-serif;">00:00</span>
+                    </div>
+
+                    <div class="buttons-area" style="display: flex; justify-content: space-between; align-items: center;">
+                        <div class="playback-controls" style="display: flex; align-items: center; gap: 15px;">
+                            <button class="ctrl-btn" id="btnPrev" title="Previous"><i class="fa-solid fa-backward-step"></i></button>
+                            <button class="ctrl-btn" id="btnSeekBack" title="Mundur 5 Detik"><i class="fa-solid fa-backward"></i></button>
+
+                            <button class="ctrl-btn play-btn" id="btnPlayPause" title="Play/Pause"><i class="fa-solid fa-play"></i></button>
+
+                            <button class="ctrl-btn" id="btnSeekForward" title="Maju 5 Detik"><i class="fa-solid fa-forward"></i></button>
+                            <button class="ctrl-btn" id="btnNext" title="Next"><i class="fa-solid fa-forward-step"></i></button>
+                        </div>
+
+                        <div class="tools-controls" style="display: flex; gap: 15px;">
+                            <!-- 💡 TOMBOL SAKELAR AUDIO MODE -->
+                            <button class="ctrl-btn" id="btnToggleAudio" title="Mode Audio Only"><i class="fa-brands fa-itunes"></i></button>
+                            <button class="ctrl-btn" id="btnPip" title="Picture in Picture"><i class="fa-solid fa-clone"></i></button>
+                            <button class="ctrl-btn" id="btnFullscreen" title="Fullscreen"><i class="fa-solid fa-expand"></i></button>
+                        </div>
+                    </div>
+                </div>
+            </div> <!-- End of video-wrapper -->
+
+            <!-- 💡 WADAH BARU: MINI PLAYER LAYOUT (AUDIO MODE) -->
+            <div id="miniPlayerLayout" class="mini-player-layout">
+                <img id="miniPlayerThumb" src="" alt="Thumb" class="mini-thumb">
+
+                <div class="mini-right-content">
+                    <div class="mini-top-row">
+                        <!-- Judul mini yang akan ikut kepotong (...) -->
+                        <div id="miniVideoTitle" style="color: #fff; font-size: 14px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 85%;">Loading...</div>
+                        <div id="btnMiniClose" style="color: #aaa; cursor: pointer; font-size: 16px;"><i class="fa-solid fa-xmark"></i></div>
+                    </div>
+
+                    <div class="mini-controls-row">
+                        <button class="ctrl-btn" id="btnMiniPrev" style="font-size: 12px;"><i class="fa-solid fa-backward-step"></i></button>
+                        <button class="ctrl-btn" id="btnMiniRewind" style="font-size: 12px;"><i class="fa-solid fa-backward"></i></button>
+                        <button class="ctrl-btn play-btn" id="btnMiniPlay" style="font-size: 14px; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center;"><i class="fa-solid fa-play"></i></button>
+                        <button class="ctrl-btn" id="btnMiniForward" style="font-size: 12px;"><i class="fa-solid fa-forward"></i></button>
+                        <button class="ctrl-btn" id="btnMiniNext" style="font-size: 12px;"><i class="fa-solid fa-forward-step"></i></button>
+
+                        <!-- Tombol Sakelar Balik ke Video Mode -->
+                        <button class="ctrl-btn" id="btnToggleVideo" style="margin-left: auto; color: #1db954;" title="Mode Video"><i class="fa-solid fa-film"></i></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const videoTitleDisplay = document.getElementById('videoTitleDisplay');
+    const statusIconDisplay = document.getElementById('statusIconDisplay');
+    const overlayErrorText = document.getElementById('overlayErrorText');
+    const vidContainer = document.getElementById('vidContainer');
+    const player = document.getElementById('mainPlayer');
+    const thumbOverlay = document.getElementById('thumbOverlay');
+    const overlayImage = document.getElementById('overlayImage');
+    const overlaySpinner = document.getElementById('overlaySpinner');
+    const overlayStandbyPlay = document.getElementById('overlayStandbyPlay');
+
+    const progressBar = document.getElementById('progressBar');
+    const currentTimeDisplay = document.getElementById('currentTimeDisplay');
+    const durationDisplay = document.getElementById('durationDisplay');
+    const btnPlayPause = document.getElementById('btnPlayPause');
+
+    // Deklarasi Elemen Mini Player Baru
+    const btnToggleAudio = document.getElementById('btnToggleAudio');
+    const btnToggleVideo = document.getElementById('btnToggleVideo');
+    const miniPlayerThumb = document.getElementById('miniPlayerThumb');
+    const miniVideoTitle = document.getElementById('miniVideoTitle');
+    const btnMiniClose = document.getElementById('btnMiniClose');
+
+    const btnMiniPlay = document.getElementById('btnMiniPlay');
+    const btnMiniPrev = document.getElementById('btnMiniPrev');
+    const btnMiniNext = document.getElementById('btnMiniNext');
+    const btnMiniRewind = document.getElementById('btnMiniRewind');
+    const btnMiniForward = document.getElementById('btnMiniForward');
+
+    // ==========================================
+    // VARIABLE INTERNAL (STATE)
+    // ==========================================
+    let stallTimer = null;
+    let activeStreamUrl = null;
+    let pendingResumeHandler = null;
+
+    // ==========================================
+    // FUNGSI PENGENDALI LAYAR OVERLAY
+    // ==========================================
+    const showOverlay = (mode, thumbUrl) => {
+        if(thumbUrl) {
+            overlayImage.src = thumbUrl;
+            localStorage.setItem('yt_cached_thumb', thumbUrl);
+        } else {
+            overlayImage.src = localStorage.getItem('yt_cached_thumb') || '';
+        }
+
+        thumbOverlay.style.display = 'block';
+
+        // Reset semua tulisan & spinner
+        overlaySpinner.style.display = 'none';
+        overlayStandbyPlay.style.display = 'none';
+        if(overlayErrorText) overlayErrorText.style.display = 'none';
+
+        if (mode === 'standby') {
+            overlayImage.style.filter = 'none';
+            overlayStandbyPlay.style.display = 'block';
+        } else if (mode === 'error') {
+            overlayImage.style.filter = 'blur(4px) brightness(0.5)';
+            if(overlayErrorText) overlayErrorText.style.display = 'block';
+        } else {
+            overlayImage.style.filter = 'blur(2px) brightness(0.6)';
+            overlaySpinner.style.display = 'block';
+        }
+    };
+    const hideOverlay = () => {
+        thumbOverlay.style.display = 'none';
+        overlayStandbyPlay.style.display = 'none';
+        overlaySpinner.style.display = 'none';
+    };
+
+    // ==========================================
+    // 💡 SAKELAR MASUK MODE AUDIO (DENGAN ANIMASI)
+    // ==========================================
+    btnToggleAudio.addEventListener('click', () => {
+        // 1. Panggil animasi pudar/ngilang
+        vidContainer.classList.add('switching-mode');
+
+        // 2. Tunggu 300ms (biar pudar sempurna), baru ganti tata letak
+        setTimeout(() => {
+            const currentThumb = localStorage.getItem('yt_cached_thumb') || '';
+            const currentTitle = localStorage.getItem('yt_cached_title') || 'No Title';
+
+            miniPlayerThumb.src = currentThumb;
+            miniVideoTitle.innerText = currentTitle;
+
+            vidContainer.classList.add('mini-audio-mode');
+            localStorage.setItem('yt_player_mode', 'audio');
+
+            // 3. Munculkan kembali dengan tata letak baru
+            vidContainer.classList.remove('switching-mode');
+        }, 300);
+    });
+
+    // ==========================================
+    // 💡 SAKELAR BALIK MODE VIDEO (DENGAN ANIMASI)
+    // ==========================================
+    btnToggleVideo.addEventListener('click', () => {
+        // 1. Panggil animasi pudar/ngilang
+        vidContainer.classList.add('switching-mode');
+
+        // 2. Tunggu 300ms, baru ganti tata letak
+        setTimeout(() => {
+            vidContainer.classList.remove('mini-audio-mode');
+            localStorage.setItem('yt_player_mode', 'video');
+
+            // 3. Munculkan kembali dengan tata letak baru
+            vidContainer.classList.remove('switching-mode');
+        }, 300);
+    });
+
+    // ==========================================
+    // 💡 LOGIKA TOMBOL CLOSE / BATAL
+    // ==========================================
+    const executeClosePlayer = () => {
+        if (!statusIconDisplay.innerHTML.includes('fa-music')) {
+            // 1. MATIKAN MESIN TOTAL (Hard Stop)
+            player.pause();
+            player.removeAttribute('src');
+            player.load();
+            clearStallDetector();
+            activeStreamUrl = null;
+
+            // 2. BERSIHKAN JEJAK MEMORI
+            localStorage.removeItem('yt_cached_url');
+            localStorage.removeItem('yt_cached_title');
+            localStorage.removeItem('yt_saved_time');
+
+            // 3. RESET UI
+            videoTitleDisplay.innerText = "Pilih lagu di bawah...";
+            statusIconDisplay.innerHTML = '<i class="fa-solid fa-music"></i>';
+            hideOverlay();
+            vidContainer.classList.remove('mini-audio-mode');
+
+            // 4. HAPUS EFEK HIJAU 'Now Playing'
+            document.dispatchEvent(new CustomEvent('app:play-url', { detail: { url: null } }));
+
+            // 5. EKSEKUSI ANIMASI PENUTUPAN
+            vidContainer.classList.add('closing');
+            setTimeout(() => {
+                vidContainer.style.display = 'none';
+                vidContainer.classList.remove('closing');
+            }, 350);
+        }
+    };
+
+    statusIconDisplay.addEventListener('click', executeClosePlayer);
+    btnMiniClose.addEventListener('click', executeClosePlayer);
+
+    // ==========================================
+    // LOGIKA KONTROL VIDEO (OTAK TOMBOL)
+    // ==========================================
+
+    // 1. Update Play/Pause Icon
+    player.addEventListener('play', () => {
+        btnPlayPause.innerHTML = '<i class="fa-solid fa-pause"></i>';
+        btnMiniPlay.innerHTML = '<i class="fa-solid fa-pause"></i>';
+    });
+    player.addEventListener('pause', () => {
+        btnPlayPause.innerHTML = '<i class="fa-solid fa-play"></i>';
+        btnMiniPlay.innerHTML = '<i class="fa-solid fa-play"></i>';
+    });
+
+    // 2. Klik Tombol Play/Pause
+    const togglePlayState = () => {
+        const savedUrl = localStorage.getItem('yt_cached_url');
+
+        // Kasus 1: Kalau mesinnya kosong atau nge-hang, kita paksa fetch ulang (mirip fungsi Overlay)
+        if (!player.src || player.src === window.location.href || player.readyState === 0) {
+            showOverlay('loading');
+            if (savedUrl) loadAndPlayVideo(savedUrl);
+            return;
+        }
+
+        // Kasus 2: Play/Pause normal
+        if (player.paused) {
+            player.play().then(() => {
+                hideOverlay();
+            }).catch(err => {
+                console.log("Play manual masih ditolak, muat ulang:", err);
+                showOverlay('loading');
+                if (savedUrl) loadAndPlayVideo(savedUrl);
+            });
+        } else {
+            player.pause();
+        }
+    };
+
+    btnPlayPause.addEventListener('click', togglePlayState);
+    btnMiniPlay.addEventListener('click', togglePlayState);
+
+    // 3. Seek Maju/Mundur
+    const seekBackward = () => {
+        if (player.duration) {
+            player.currentTime = Math.max(0, player.currentTime - 5);
+        }
+    };
+    const seekForward = () => {
+        if (player.duration) {
+            player.currentTime = Math.min(player.duration, player.currentTime + 5);
+        }
+    };
+
+
+    document.getElementById('btnSeekBack').addEventListener('click', seekBackward);
+    document.getElementById('btnSeekForward').addEventListener('click', seekForward);
+    btnMiniRewind.addEventListener('click', seekBackward);
+    btnMiniForward.addEventListener('click', seekForward);
+
+    // 4. Update Progress Bar & Waktu
+    player.addEventListener('timeupdate', () => {
+        const percent = (player.currentTime / player.duration) * 100;
+        progressBar.value = percent || 0;
+
+        const format = (sec) => {
+            const m = Math.floor(sec / 60);
+            const s = Math.floor(sec % 60);
+            return `${m}:${s.toString().padStart(2, '0')}`;
+        };
+        currentTimeDisplay.innerText = format(player.currentTime);
+        if(player.duration) durationDisplay.innerText = format(player.duration);
+    });
+
+    // 5. Geser Progress Bar (Manual Seek)
+    progressBar.addEventListener('input', (e) => {
+        const time = (e.target.value / 100) * player.duration;
+        player.currentTime = time;
+    });
+
+    // 6. Next & Prev
+    const playNext = () => document.dispatchEvent(new CustomEvent('app:play-next'));
+    const playPrev = () => document.dispatchEvent(new CustomEvent('app:play-prev'));
+
+    document.getElementById('btnNext').addEventListener('click', playNext);
+    document.getElementById('btnPrev').addEventListener('click', playPrev);
+    btnMiniNext.addEventListener('click', playNext);
+    btnMiniPrev.addEventListener('click', playPrev);
+
+
+    // ==========================================
+    // FUNGSI UTAMA LOAD VIDEO
+    // ==========================================
+    const loadAndPlayVideo = async (url) => {
+        vidContainer.style.display = "block";
+
+        try {
+            const data = await fetchDirectUrl(url);
+            activeStreamUrl = `/stream-video?url=${encodeURIComponent(data.directUrl)}`;
+            player.src = activeStreamUrl;
+            player.controls = false;
+
+            player.addEventListener('loadedmetadata', function onMeta() {
+                const savedTime = localStorage.getItem('yt_saved_time');
+                if (savedTime && parseFloat(savedTime) > 0) {
+                    player.currentTime = parseFloat(savedTime);
+                }
+                player.removeEventListener('loadedmetadata', onMeta);
+            });
+
+            try {
+                await player.play();
+                clearStallDetector();
+            } catch (e) {
+                console.log("Auto-play ditahan browser.");
+                showOverlay('standby');
+
+                // 💡 FIX: Beritahu tombol UI untuk ganti jadi icon Play
+                btnPlayPause.innerHTML = '<i class="fa-solid fa-play"></i>';
+                btnMiniPlay.innerHTML = '<i class="fa-solid fa-play"></i>';
+
+                // Hentikan spinner muter di kanan atas
+                statusIconDisplay.innerHTML = '<i class="fa-solid fa-music"></i>';
+                btnMiniClose.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+            }
+
+
+        } catch (err) {
+            hideOverlay();
+        }
+    };
+
+    // ==========================================
+    // LOGIKA STALL DETECTOR
+    // ==========================================
+    const startStallDetector = () => {
+        clearStallDetector();
+
+        stallTimer = setTimeout(() => {
+            if (activeStreamUrl && !player.paused) {
+                const lastTime = player.currentTime;
+                localStorage.setItem('yt_saved_time', lastTime);
+
+                player.pause();
+                player.removeAttribute('src');
+                player.src = '';
+                player.load();
+
+                player.src = activeStreamUrl;
+                player.load();
+
+                if (pendingResumeHandler) {
+                    player.removeEventListener('loadedmetadata', pendingResumeHandler);
+                }
+
+                pendingResumeHandler = function onResume() {
+                    player.currentTime = lastTime;
+                    player.play().catch(() => {
+                        hideOverlay();
+                    });
+
+                    player.removeEventListener('loadedmetadata', pendingResumeHandler);
+                    pendingResumeHandler = null;
+                };
+
+                player.addEventListener('loadedmetadata', pendingResumeHandler);
+            }
+        }, 6000);
+    };
+
+    const clearStallDetector = () => {
+        if (stallTimer) {
+            clearTimeout(stallTimer);
+            stallTimer = null;
+        }
+    };
+
+    // ==========================================
+    // SINKRONISASI ICON MINI PLAYER DENGAN STATUS LAGU
+    // ==========================================
+    player.addEventListener('waiting', () => {
+        statusIconDisplay.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+        // 💡 MINI PLAYER: Ubah tombol X jadi spinner saat loading/buffering
+        btnMiniClose.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+        startStallDetector();
+    });
+
+    player.addEventListener('playing', () => {
+        statusIconDisplay.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+        // 💡 MINI PLAYER: Balikin jadi icon X pas lagu udah mulai bunyi
+        btnMiniClose.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+        hideOverlay();
+        clearStallDetector();
+    });
+
+    player.addEventListener('error', () => {
+        const err = player.error;
+        if (!err) return;
+
+        const currentSrc = player.getAttribute('src');
+        if (!currentSrc || currentSrc === '') return;
+
+        if (err.code === 4) {
+            statusIconDisplay.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color: #ff4444;"></i>';
+            // 💡 MINI PLAYER: Ubah jadi tanda seru merah kalau error terblokir
+            btnMiniClose.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color: #ff4444;"></i>';
+            showOverlay('error');
+        }
+    });
+
+    player.addEventListener('stalled', () => {
+        startStallDetector();
+    });
+
+    player.addEventListener('ended', () => {
+        document.dispatchEvent(new CustomEvent('app:play-next'));
+    });
+
+    player.addEventListener('timeupdate', () => {
+        if (player.currentTime > 0 && player.readyState >= 2 && !player.paused) {
+            clearStallDetector();
+            localStorage.setItem('yt_saved_time', player.currentTime);
+        }
+    });
+
+    player.oncanplay = () => {
+        hideOverlay();
+        onVideoReady(player);
+    };
+
+    // ==========================================
+    // LOGIKA PERGANTIAN VIDEO & KLIK OVERLAY
+    // ==========================================
+    thumbOverlay.addEventListener('click', () => {
+        if (overlayStandbyPlay.style.display !== 'none') {
+            const savedUrl = localStorage.getItem('yt_cached_url');
+
+            if (!player.src || player.src === window.location.href) {
+                showOverlay('loading');
+                if (savedUrl) loadAndPlayVideo(savedUrl);
+            } else {
+                player.play().then(() => {
+                    hideOverlay();
+                }).catch(err => {
+                    console.log("Play manual masih ditolak, muat ulang:", err);
+                    showOverlay('loading');
+                    if (savedUrl) loadAndPlayVideo(savedUrl);
+                });
+            }
+        }
+    });
+
+
+    if (playUrlHandler) {
+        document.removeEventListener('app:play-url', playUrlHandler);
+    }
+
+    playUrlHandler = async (e) => {
+        const url = e.detail.url;
+        const thumb = e.detail.thumbnail;
+        const title = e.detail.title || 'Memuat stream...';
+        const isLocal = e.detail.isLocal;
+        const fileHandle = e.detail.fileHandle;
+
+        // ==========================================
+        // 💡 FIX 1: CEGAH RAM BOCOR (Memory Leak)
+        // Bersihkan memori Blob URL lagu lokal sebelumnya jika ada
+        // ==========================================
+        if (activeStreamUrl && activeStreamUrl.startsWith('blob:')) {
+            URL.revokeObjectURL(activeStreamUrl);
+        }
+
+        // ==========================================
+        // 💡 FIX 2: PINDAHKAN MEDIA SESSION KE ATAS
+        // Biar lagu Lokal (Offline) juga dapet notifikasi Lockscreen!
+        // ==========================================
+        if ('mediaSession' in navigator) {
+            navigator.mediaSession.metadata = new MediaMetadata({
+                title: title,
+                artist: isLocal ? 'Lagu Offline Lokal' : 'YT Audio Mixer', // Bedakan artisnya
+                artwork: [
+                    { src: thumb || 'https://via.placeholder.com/512', sizes: '512x512', type: 'image/jpeg' }
+                ]
+            });
+
+            navigator.mediaSession.setActionHandler('play', () => player.play());
+            navigator.mediaSession.setActionHandler('pause', () => player.pause());
+            navigator.mediaSession.setActionHandler('previoustrack', () => document.dispatchEvent(new CustomEvent('app:play-prev')));
+            navigator.mediaSession.setActionHandler('nexttrack', () => document.dispatchEvent(new CustomEvent('app:play-next')));
+        }
+
+        // ==========================================
+        // 1. JALUR KHUSUS LAGU OFFLINE LOKAL
+        // ==========================================
+        if (isLocal && fileHandle) {
+
+            vidContainer.style.display = "block";
+
+            localStorage.setItem('yt_cached_title', title);
+            localStorage.setItem('yt_cached_thumb', thumb);
+            localStorage.setItem('yt_cached_url', title);
+
+            videoTitleDisplay.innerText = title;
+            miniVideoTitle.innerText = title;
+            if(thumb) miniPlayerThumb.src = thumb;
+
+            statusIconDisplay.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+            btnMiniClose.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+
+            showOverlay('loading', thumb);
+
+            try {
+                const file = await fileHandle.getFile();
+                const localBlobUrl = URL.createObjectURL(file); // RAM dipakai di sini
+
+                activeStreamUrl = localBlobUrl;
+                player.src = activeStreamUrl;
+
+                await player.play();
+                clearStallDetector();
+            } catch (err) {
+                console.error("Gagal putar file lokal:", err);
+                showOverlay('error');
+            }
+            return; // 🛑 Hentikan kode disini, jangan eksekusi fetch backend!
+        }
+
+        // ==========================================
+        // 2. KODE LAMA YOUTUBE (Jalur Online)
+        // ==========================================
+        if (!url) return;
+
+        localStorage.setItem('yt_cached_title', title);
+        videoTitleDisplay.innerText = title;
+
+        miniVideoTitle.innerText = title;
+        if(thumb) miniPlayerThumb.src = thumb;
+
+        statusIconDisplay.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+        btnMiniClose.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+
+        showOverlay('loading', thumb);
+
+        clearStallDetector();
+        if (pendingResumeHandler) {
+            player.removeEventListener('loadedmetadata', pendingResumeHandler);
+            pendingResumeHandler = null;
+        }
+
+        if (url !== localStorage.getItem('yt_cached_url')) {
+            localStorage.setItem('yt_saved_time', '0');
+            player.pause();
+            player.currentTime = 0;
+            player.removeAttribute('src');
+            player.src = '';
+            player.load();
+        }
+
+        localStorage.setItem('yt_cached_url', url);
+        loadAndPlayVideo(url);
+    };
+
+    document.addEventListener('app:play-url', playUrlHandler);
+
+    // ==========================================
+    // LAZY LOAD SAAT REFRESH
+    // ==========================================
+    const savedUrl = localStorage.getItem('yt_cached_url');
+    const savedTitle = localStorage.getItem('yt_cached_title');
+    const savedThumb = localStorage.getItem('yt_cached_thumb');
+    const savedMode = localStorage.getItem('yt_player_mode');
+
+    if (savedUrl) {
+        if (savedTitle) {
+            videoTitleDisplay.innerText = savedTitle;
+            miniVideoTitle.innerText = savedTitle;
+        }
+        if (savedThumb) {
+            miniPlayerThumb.src = savedThumb;
+        }
+
+        vidContainer.style.display = "block";
+        showOverlay('standby');
+
+        // Kembalikan ke mode mini jika user terakhir meninggalkannya di mode audio
+        if (savedMode === 'audio') {
+            vidContainer.classList.add('mini-audio-mode');
+        }
+    }
+
+    // ==========================================
+    // UTILITY UI (PIP & FULLSCREEN)
+    // ==========================================
+    document.getElementById('btnPip').addEventListener('click', async () => {
+        try {
+            if (document.pictureInPictureElement) await document.exitPictureInPicture();
+            else await player.requestPictureInPicture();
+        } catch (e) { console.error("PiP Error", e); }
+    });
+
+    // 💡 TYPO FIXED HERE
+    document.getElementById('btnFullscreen').addEventListener('click', async () => {
+        try {
+            if (document.fullscreenElement) await document.exitFullscreen();
+            else await vidContainer.requestFullscreen();
+        } catch (e) { console.error("FS Error", e); }
+    });
+
+    // ==========================================
+    // DETEKSI MODE PiP (PICTURE-IN-PICTURE)
+    // ==========================================
+    player.addEventListener('enterpictureinpicture', () => {
+        vidContainer.classList.add('is-pip');
+    });
+
+    player.addEventListener('leavepictureinpicture', () => {
+        vidContainer.classList.remove('is-pip');
+        setTimeout(() => {
+            if (player.paused) {
+                player.play().catch(err => {
+                    console.log("Sistem mencegah auto-play saat keluar PiP", err);
+                });
+            }
+        }, 150);
+    });
+}
+
+
+
+-------------------------------------------------------------------------------------
+frontend/src/components/Video/VideoCard.css
+-------------------------------------------------------------------------------------
+.video-card-ui input[type="text"] { padding: 12px; width: 60%; background: #2a2a2a; color: white; border: 1px solid #333; border-radius: 4px; }
+.video-card-ui button { padding: 12px 15px; background: #ff0000; color: #fff; border: none; cursor: pointer; border-radius: 4px; font-weight: bold; margin-left: 5px;}
+.video-card-ui button:hover { background: #cc0000; }
+.video-container { position: relative; width: 100%; display: none; margin-top: 15px; }
+video { width: 100%; border-radius: 8px; background: #000; display: block;}
+.video-controls { margin-top: 8px; display: flex; gap: 10px; justify-content: flex-end; }
+.btn-control { padding: 6px 12px; background: #444; color: #fff; font-size: 12px; border-radius: 4px; border: none; cursor: pointer; }
+.btn-control:hover { background: #666; }
+.status { color: #aaa; margin-top: 10px; font-size: 14px; }
+
+/* ==========================================
+   CUSTOM CONTROLS STYLE
+========================================== */
+.ctrl-btn {
+    background: transparent;
+    border: none;
+    color: #fff;
+    font-size: 18px; /* Ukuran icon */
+    cursor: pointer;
+    transition: transform 0.2s ease, color 0.2s ease;
+    padding: 5px;
+}
+
+.ctrl-btn:hover {
+    color: #ff0000; /* Merah YouTube saat disentuh */
+    transform: scale(1.15); /* Efek membesar sedikit */
+}
+
+/* Khusus tombol Play/Pause biar lebih dominan */
+.play-btn {
+    font-size: 22px;
+    width: 45px;
+    height: 45px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.play-btn:hover {
+    background: rgba(255, 0, 0, 0.2);
+}
+
+/* Reset sedikit style input range bawaan browser biar rapi */
+/*input[type=range] {
+    -webkit-appearance: none;
+    background: rgba(255, 255, 255, 0.2);
+}
+*/
+/* 💡 CLASS UNTUK TOMBOL YANG MATI/MENTOK */
+.disabled-btn {
+    color: #555 !important;
+    cursor: not-allowed !important;
+    pointer-events: none; /* Bikin ga bisa diklik sama sekali */
+    transform: none !important; /* Ilangin efek membesar pas di-hover */
+}
+
+/* 💡 ANIMASI PENUTUPAN PLAYER (OPSI C) */
+.video-container {
+    transition: opacity 0.35s ease, transform 0.35s ease;
+    transform-origin: top center;
+}
+
+.video-container.closing {
+    opacity: 0 !important;
+    transform: translateY(-20px) scale(0.98) !important;
+    pointer-events: none; /* Biar ga bisa diklik pas lagi proses ngilang */
+}
+
+/* ==========================================
+   💡 TATA LETAK AUDIO MODE (MINI PLAYER)
+   ========================================== */
+
+/* Wadah layout baru untuk mode mini (Thumbnail di kiri, kontrol di kanan) */
+.mini-player-layout {
+    display: none; /* Sembunyikan default-nya */
+    background: #1e1e1e;
+    border-radius: 12px;
+    padding: 10px;
+    align-items: center;
+    gap: 15px;
+    border: 1px solid #333;
+}
+
+/* Saat class .mini-audio-mode aktif pada container utama */
+.video-container.mini-audio-mode {
+    max-width: 100% !important;
+}
+
+.video-container.mini-audio-mode .video-wrapper {
+    display: none !important; /* SEMBUNYIKAN VIDEO FISIK */
+}
+
+.video-container.mini-audio-mode .mini-player-layout {
+    display: flex !important; /* TAMPILKAN MINI PLAYER LAYOUT */
+}
+
+/* Style Thumbnail Bulat/Rounded di Kiri */
+.mini-thumb {
+    width: 75px;
+    height: 75px;
+    object-fit: cover;
+    border-radius: 10px;
+    flex-shrink: 0;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+}
+
+/* Area Kontrol Kanan */
+.mini-right-content {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex-grow: 1;
+    min-width: 0; /* Biar ellipsis judul bekerja */
+}
+
+.mini-top-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.mini-controls-row {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+/* 💡 SEMBUNYIKAN TOP BAR BAWAAN SAAT MODE AUDIO AKTIF */
+.video-container.mini-audio-mode #topHeaderBar {
+    display: none !important;
+}
+
+/* 💡 ANIMASI TRANSISI GANTI MODE (VIDEO <-> AUDIO) */
+.video-container.switching-mode {
+    opacity: 0 !important;
+    transform: scale(0.97) translateY(-5px) !important;
+    pointer-events: none; /* Biar ga bisa diklik pas lagi transisi */
+}
+
+-------------------------------------------------------------------------------------
+frontend/src/components/Effects/GraphicEQ.js
+-------------------------------------------------------------------------------------
+import './GraphicEQ.css';
+
+const eqFrequencies = [
+    25, 31, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500, 630,
+    800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300, 8000, 10000, 12500, 16000, 20000
+];
+
+export function initGraphicEQ(audioCtx, inputL, inputR, containerId) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = `
+        <div class="eq-title">CH 1: LEFT (Kiri)</div><div class="eq-rack" id="eqContainerL"></div>
+        <div class="eq-title">CH 2: RIGHT (Kanan)</div><div class="eq-rack" id="eqContainerR"></div>
+    `;
+
+    const createFilterChain = (channelInput, channelStr, rackId) => {
+        let prevNode = channelInput;
+        let lastNode;
+        let html = "";
+
+        const nodes = eqFrequencies.map((freq, index) => {
+            const savedGain = localStorage.getItem(`audio_eq_${channelStr}_${index}`) || '0';
+            let filter = audioCtx.createBiquadFilter();
+
+            filter.type = (index === 0) ? "lowshelf" : (index === eqFrequencies.length - 1) ? "highshelf" : "peaking";
+            filter.frequency.value = freq;
+            filter.gain.value = parseInt(savedGain);
+            if (filter.type === "peaking") filter.Q.value = 4.31;
+
+            // Sambung seri: Output node sebelumnya -> Input node ini
+            prevNode.connect(filter);
+            prevNode = filter;
+            lastNode = filter;
+
+            // Buat HTML Slider
+            let label = freq >= 1000 ? (freq/1000).toString().replace('.', 'k') + (freq%1000==0?'k':'') : freq;
+            if(["1.2k", "1.6k", "2.5k", "3.1k", "6.3k", "12.5k"].includes(label)) {} // bypass lama
+
+            html += `
+                <div class="eq-band">
+                    <span>${label}</span>
+                    <input type="range" class="vertical-slider" id="eq_sl_${channelStr}_${index}" min="-15" max="15" value="${savedGain}" step="1">
+                    <div class="eq-val" id="eq_val_${channelStr}_${index}">${savedGain > 0 ? '+'+savedGain : savedGain} dB</div>
+                </div>`;
+            return filter;
+        });
+
+        document.getElementById(rackId).innerHTML = html;
+
+        // Pasang Listener
+        eqFrequencies.forEach((_, index) => {
+            document.getElementById(`eq_sl_${channelStr}_${index}`).addEventListener('input', (e) => {
+                let dbVal = parseInt(e.target.value);
+                nodes[index].gain.value = dbVal;
+                document.getElementById(`eq_val_${channelStr}_${index}`).innerText = (dbVal > 0 ? "+" : "") + dbVal + " dB";
+                localStorage.setItem(`audio_eq_${channelStr}_${index}`, dbVal);
+            });
+        });
+
+        // Kembalikan node terakhir (ujung kabel setelah melewati 30 filter)
+        return lastNode;
+    };
+
+    const finalOutL = createFilterChain(inputL, 'L', 'eqContainerL');
+    const finalOutR = createFilterChain(inputR, 'R', 'eqContainerR');
+
+    return { outL: finalOutL, outR: finalOutR };
+}
+
+
+
+-------------------------------------------------------------------------------------
+frontend/src/components/Effects/GraphicEQ.css
+-------------------------------------------------------------------------------------
+.eq-title { font-size: 14px; font-weight: bold; color: #ffaa00; margin-bottom: 5px; margin-top: 15px;}
+.eq-rack { display: flex; overflow-x: auto; gap: 15px; padding: 20px 10px; background: #111; border-radius: 6px; border: 2px solid #333; margin-bottom: 20px; }
+.eq-band { display: flex; flex-direction: column; align-items: center; min-width: 40px; }
+.eq-band span { font-size: 10px; color: #aaa; margin-bottom: 10px; font-weight: bold; }
+.eq-val { font-size: 10px; color: #ff4444; margin-top: 10px; }
+input[type=range].vertical-slider { -webkit-appearance: slider-vertical; appearance: slider-vertical; width: 20px; height: 150px; cursor: pointer; accent-color: #00C851; }       
+
+
+
+-------------------------------------------------------------------------------------
+frontend/src/components/Effects/DelayPedal.js
+-------------------------------------------------------------------------------------
+export function initDelayPedal(audioCtx, inputL, inputR, containerId) {
+    const savedL = localStorage.getItem('audio_delay_l') || '0';
+    const savedR = localStorage.getItem('audio_delay_r') || '0';
+    const savedLowCut = localStorage.getItem('audio_delay_lowcut') || '80';
+                                                                                             document.getElementById(containerId).innerHTML = `
+        <div class="track">
+            <label><span>Delay L (Kiri)</span> <span id="valDelayL">${savedL} ms</span></label>                                                                                               <input type="range" class="horizontal" id="slDelayL" min="0" max="50" value="${savedL}">
+
+            <label style="margin-top:10px;"><span>Delay R (Kanan)</span> <span id="valDelayR">${savedR} ms</span></label>
+            <input type="range" class="horizontal" id="slDelayR" min="0" max="50" value="${savedR}">
+
+            <label style="margin-top:10px; color:#00C851;"><span>Bypass Sub (Crossover)</span> <span id="valDelayLowCut">${savedLowCut} Hz</span></label>
+            <input type="range" class="horizontal" id="slDelayLowCut" min="20" max="600" value="${savedLowCut}">
+        </div>
+    `;
+
+    // ==========================================
+    // 1. TERMINAL OUTPUT UTAMA (DENGAN HEADROOM)
+    // ==========================================
+    const outNodeL = audioCtx.createGain(); outNodeL.gain.value = 0.85; // Mencegah clipping digital
+    const outNodeR = audioCtx.createGain(); outNodeR.gain.value = 0.85;
+
+    // ==========================================
+    // 2. KOMPONEN FILTER (FASE & KURVA SEMPURNA)
+    // ==========================================
+    const freq = parseFloat(savedLowCut);
+
+    // Pembalik Fase HPF (Linkwitz-Riley -24dB Correction)
+    const invertHPFL = audioCtx.createGain(); invertHPFL.gain.value = -1;
+    const invertHPFR = audioCtx.createGain(); invertHPFR.gain.value = -1;
+
+    // Pembelah Bass Kiri & Kanan (Q disetel ke 0.707 agar respons datar/flat)
+    const lpfL1 = audioCtx.createBiquadFilter(); lpfL1.type = 'lowpass'; lpfL1.frequency.value = freq; lpfL1.Q.value = 0.707;
+    const lpfL2 = audioCtx.createBiquadFilter(); lpfL2.type = 'lowpass'; lpfL2.frequency.value = freq; lpfL2.Q.value = 0.707;
+    const lpfR1 = audioCtx.createBiquadFilter(); lpfR1.type = 'lowpass'; lpfR1.frequency.value = freq; lpfR1.Q.value = 0.707;
+    const lpfR2 = audioCtx.createBiquadFilter(); lpfR2.type = 'lowpass'; lpfR2.frequency.value = freq; lpfR2.Q.value = 0.707;
+
+    // Pembelah Treble Kiri & Kanan (Q disetel ke 0.707 agar respons datar/flat)
+    const hpfL1 = audioCtx.createBiquadFilter(); hpfL1.type = 'highpass'; hpfL1.frequency.value = freq; hpfL1.Q.value = 0.707;
+    const hpfL2 = audioCtx.createBiquadFilter(); hpfL2.type = 'highpass'; hpfL2.frequency.value = freq; hpfL2.Q.value = 0.707;
+    const hpfR1 = audioCtx.createBiquadFilter(); hpfR1.type = 'highpass'; hpfR1.frequency.value = freq; hpfR1.Q.value = 0.707;
+    const hpfR2 = audioCtx.createBiquadFilter(); hpfR2.type = 'highpass'; hpfR2.frequency.value = freq; hpfR2.Q.value = 0.707;
+
+    // ==========================================
+    // 3. MESIN DELAY MURNI
+    // ==========================================
+    const delayL = audioCtx.createDelay(); delayL.delayTime.value = parseFloat(savedL) / 1000;
+    const delayR = audioCtx.createDelay(); delayR.delayTime.value = parseFloat(savedR) / 1000;
+
+    // ==========================================
+    // 4. RAKIT KABEL (LOGIKAL & LINIER)
+    // ==========================================
+
+    // --- JALUR KIRI ---
+    // Bass (LPF) -> Langsung ke output
+    inputL.connect(lpfL1); lpfL1.connect(lpfL2); lpfL2.connect(outNodeL);
+
+    // Treble (HPF) -> Pembalik Fase -> Filter -> Delay -> Output
+    inputL.connect(invertHPFL);
+    invertHPFL.connect(hpfL1); hpfL1.connect(hpfL2);
+    hpfL2.connect(delayL);
+    delayL.connect(outNodeL);
+
+    // --- JALUR KANAN ---
+    // Bass (LPF) -> Langsung ke output
+    inputR.connect(lpfR1); lpfR1.connect(lpfR2); lpfR2.connect(outNodeR);
+
+    // Treble (HPF) -> Pembalik Fase -> Filter -> Delay -> Output
+    inputR.connect(invertHPFR);
+    invertHPFR.connect(hpfR1); hpfR1.connect(hpfR2);
+    hpfR2.connect(delayR);
+    delayR.connect(outNodeR);
+
+
+    // ==========================================
+    // 5. UI EVENTS
+    // ==========================================
+    document.getElementById('slDelayL').addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        delayL.delayTime.value = val / 1000;
+        document.getElementById('valDelayL').innerText = val + " ms";
+        localStorage.setItem('audio_delay_l', val);
+    });
+
+    document.getElementById('slDelayR').addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        delayR.delayTime.value = val / 1000;
+        document.getElementById('valDelayR').innerText = val + " ms";
+        localStorage.setItem('audio_delay_r', val);
+    });
+
+    document.getElementById('slDelayLowCut').addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+
+        // Update frekuensi ke-8 node filter secara real-time
+        lpfL1.frequency.value = lpfL2.frequency.value = val;
+        lpfR1.frequency.value = lpfR2.frequency.value = val;
+        hpfL1.frequency.value = hpfL2.frequency.value = val;
+        hpfR1.frequency.value = hpfR2.frequency.value = val;
+
+        document.getElementById('valDelayLowCut').innerText = val + " Hz";
+        localStorage.setItem('audio_delay_lowcut', val);
+    });
+
+    return { outL: outNodeL, outR: outNodeR };
+}
+
+
+
+
+-------------------------------------------------------------------------------------
+frontend/src/components/Effects/Distortion.js
+-------------------------------------------------------------------------------------
+function makeDistortionCurve(amount) {
+    let k = amount, n = 44100, curve = new Float32Array(n), deg = Math.PI/180;
+    for (let i = 0; i < n; ++i) {
+        let x = i * 2 / n - 1;
+        curve[i] = (3 + k) * x * 20 * deg / (Math.PI + k * Math.abs(x));
+    }
+    return curve;
+}
+
+export function initDistortion(audioCtx, inputNode, containerId) {
+    const savedDist = localStorage.getItem('audio_dist') || '0';
+
+    document.getElementById(containerId).innerHTML = `
+        <div class="track">
+            <label><span>Distortion (Fuzz)</span> <span id="valDist">${savedDist} %</span></label>
+            <input type="range" class="horizontal" id="slDist" min="0" max="100" value="${savedDist}">
+        </div>
+    `;
+
+    const distNode = audioCtx.createWaveShaper();
+    distNode.curve = makeDistortionCurve(parseFloat(savedDist) * 4);
+
+    inputNode.connect(distNode);
+
+    document.getElementById('slDist').addEventListener('input', (e) => {
+        let val = parseFloat(e.target.value);
+        distNode.curve = makeDistortionCurve(val * 4);
+        document.getElementById('valDist').innerText = val + " %";
+        localStorage.setItem('audio_dist', val);
+    });
+
+    return distNode;
+}
+
+
+-------------------------------------------------------------------------------------
+frontend/src/components/Effects/Panning.js
+-------------------------------------------------------------------------------------
+export function initPanning(audioCtx, inputL, inputR, containerId) {
+    const savedPan = localStorage.getItem('audio_pan') || '0';
+
+    document.getElementById(containerId).innerHTML = `
+        <div class="track">
+            <label><span>Panning (L-R Hard Mute)</span> <span id="valPan">Tengah</span></label>
+            <input type="range" class="horizontal" id="slPan" min="-1" max="1" step="0.1" value="${savedPan}">
+        </div>
+    `;
+
+    const gainL = audioCtx.createGain();
+    const gainR = audioCtx.createGain();
+
+    const initialVal = parseFloat(savedPan);
+    gainL.gain.value = Math.min(1, 1 - initialVal);
+    gainR.gain.value = Math.min(1, 1 + initialVal);
+
+    inputL.connect(gainL);
+    inputR.connect(gainR);
+
+    const updateLabel = (val) => {
+        document.getElementById('valPan').innerText = val === 0 ? "Tengah" : (val < 0 ? "Kiri" : "Kanan");
+    };
+    updateLabel(initialVal);
+
+    document.getElementById('slPan').addEventListener('input', (e) => {
+        let val = parseFloat(e.target.value);
+        gainL.gain.value = Math.min(1, 1 - val);
+        gainR.gain.value = Math.min(1, 1 + val);
+        updateLabel(val);
+        localStorage.setItem('audio_pan', val);
+    });
+
+    return { outL: gainL, outR: gainR };
+}
+
+
+-------------------------------------------------------------------------------------
+frontend/src/components/Effects/EchoDelay.js
+-------------------------------------------------------------------------------------
+export function initEchoDelay(audioCtx, inputNode, containerId) {
+    const savedTime = localStorage.getItem('audio_echo_time') || '250';
+    const savedFeedback = localStorage.getItem('audio_echo_fb') || '40';
+
+    document.getElementById(containerId).innerHTML = `
+        <div class="track" style="border-left: 4px solid #00d2ff; padding-left: 10px; margin-bottom: 20px;">
+            <h4 style="margin:0 0 10px 0; color:#00d2ff;">Stereo Echo</h4>
+            <label><span>Jeda Pantulan (Time)</span> <span id="valEchoTime">${savedTime} ms</span></label>
+            <input type="range" class="horizontal" id="slEchoTime" min="50" max="800" value="${savedTime}">
+
+            <label style="margin-top:10px;"><span>Panjang Buntut & Volume</span> <span id="valEchoFb">${savedFeedback} %</span></label>                                                       <input type="range" class="horizontal" id="slEchoFb" min="0" max="90" value="${savedFeedback}">                                                                               </div>
+    `;
+
+    // Terminal Output Akhir
+    const pedalOutput = audioCtx.createGain();
+
+    // 1. Jalur Kering (Murni)
+    inputNode.connect(pedalOutput);
+
+    // 2. Jalur Basah (Efek) - Pakai Keran Volume
+    const wetGain = audioCtx.createGain();
+
+    // Splitter untuk misahin kabel Kiri dan Kanan
+    const splitter = audioCtx.createChannelSplitter(2);
+    inputNode.connect(splitter);
+                                                                                             const delayL = audioCtx.createDelay(2.0);
+    const delayR = audioCtx.createDelay(2.0);
+    const fbGainL = audioCtx.createGain();
+    const fbGainR = audioCtx.createGain();
+
+    // Set nilai awal
+    const timeInSec = parseFloat(savedTime) / 1000;
+    delayL.delayTime.value = timeInSec;
+    delayR.delayTime.value = timeInSec;
+
+    const fbVal = parseFloat(savedFeedback);
+    fbGainL.gain.value = fbVal / 100;
+    fbGainR.gain.value = fbVal / 100;
+
+    // Kunci Fix: Kalau memori nyimpan angka 0, matikan total suara efeknya
+    wetGain.gain.value = fbVal === 0 ? 0 : 0.8;
+
+    // 3. Routing Kabel Stereo (Kiri di Kiri, Kanan di Kanan)
+    splitter.connect(delayL, 0); // Sinyal Kiri masuk Delay Kiri
+    delayL.connect(fbGainL);
+    fbGainL.connect(delayL);
+
+    splitter.connect(delayR, 1); // Sinyal Kanan masuk Delay Kanan
+    delayR.connect(fbGainR);
+    fbGainR.connect(delayR);
+
+    // Merger untuk gabungin lagi Kiri dan Kanan sebelum masuk wetGain
+    const merger = audioCtx.createChannelMerger(2);
+    delayL.connect(merger, 0, 0);
+    delayR.connect(merger, 0, 1);
+
+    merger.connect(wetGain);
+    wetGain.connect(pedalOutput);
+
+    // ==========================================
+    // UI EVENTS
+    // ==========================================
+    document.getElementById('slEchoTime').addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        delayL.delayTime.value = val / 1000;
+        delayR.delayTime.value = val / 1000;
+        document.getElementById('valEchoTime').innerText = val + " ms";
+        localStorage.setItem('audio_echo_time', val);
+    });
+
+    document.getElementById('slEchoFb').addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        fbGainL.gain.value = val / 100;
+        fbGainR.gain.value = val / 100;
+
+        // Kunci Fix: Kalau slider ditarik ke 0, putus keran suara efeknya total
+        if (val === 0) {
+            wetGain.gain.value = 0;
+        } else {
+            wetGain.gain.value = 0.8; // Volume normal efek
+        }
+
+        document.getElementById('valEchoFb').innerText = val + " %";
+        localStorage.setItem('audio_echo_fb', val);
+    });
+
+    return pedalOutput;
+}
+
+
+
+
+-------------------------------------------------------------------------------------
+frontend/src/components/Effects/ReverbPedal.js
+-------------------------------------------------------------------------------------
+export function initReverbPedal(audioCtx, inputNode, containerId) {
+    const savedTime = localStorage.getItem('audio_reverb_time') || '2.5';
+    const savedMix = localStorage.getItem('audio_reverb_mix') || '25';
+
+    document.getElementById(containerId).innerHTML = `
+        <div class="track" style="border-left: 4px solid #ff007f; padding-left: 10px;">
+            <h4 style="margin:0 0 10px 0; color:#ff007f;">True Reverb (Gema Ruangan)</h4>
+            <label><span>Ukuran Ruangan (Decay)</span> <span id="valRevTime">${savedTime} dtk</span></label>
+            <input type="range" class="horizontal" id="slRevTime" min="1" max="5" step="0.5" value="${savedTime}">
+
+            <label style="margin-top:10px;"><span>Tingkat Basah (Mix)</span> <span id="valRevMix">${savedMix} %</span></label>
+            <input type="range" class="horizontal" id="slRevMix" min="0" max="100" value="${savedMix}">
+        </div>
+    `;
+
+    const pedalOutput = audioCtx.createGain();
+    const dryGain = audioCtx.createGain();
+    const wetGain = audioCtx.createGain();
+
+    // Mesin pembuat ruangan
+    const convolver = audioCtx.createConvolver();
+
+    // Fungsi pencetak akustik ruangan virtual (White noise memudar)
+    const generateImpulseResponse = (duration) => {
+        const sampleRate = audioCtx.sampleRate;
+        const length = sampleRate * duration;
+        const impulse = audioCtx.createBuffer(2, length, sampleRate);
+        const left = impulse.getChannelData(0);
+        const right = impulse.getChannelData(1);
+
+        for (let i = 0; i < length; i++) {
+            const decay = Math.exp(-i / (sampleRate * (duration / 3)));
+            left[i] = (Math.random() * 2 - 1) * decay;
+            right[i] = (Math.random() * 2 - 1) * decay;
+        }
+        return impulse;
+    };
+
+    // Render ruangan awal
+    convolver.buffer = generateImpulseResponse(parseFloat(savedTime));
+
+    const setMix = (val) => {
+        const wetPercent = val / 100;
+        wetGain.gain.value = wetPercent;
+        dryGain.gain.value = 1 - (wetPercent * 0.3); // Kurangi suara murni dikit biar gak balapan
+    };
+    setMix(parseFloat(savedMix));
+
+    // Routing Kabel
+    inputNode.connect(dryGain);
+    dryGain.connect(pedalOutput);
+
+    inputNode.connect(convolver);
+    convolver.connect(wetGain);
+    wetGain.connect(pedalOutput);
+
+    // UI Events (Pakai 'change' biar browser HP gak berat generate IR terus-terusan pas digeser)
+    document.getElementById('slRevTime').addEventListener('change', (e) => {
+        const val = parseFloat(e.target.value);
+        convolver.buffer = generateImpulseResponse(val);
+        localStorage.setItem('audio_reverb_time', val);
+    });
+
+    document.getElementById('slRevTime').addEventListener('input', (e) => {
+        document.getElementById('valRevTime').innerText = e.target.value + " dtk";
+    });
+
+    document.getElementById('slRevMix').addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        setMix(val);
+        document.getElementById('valRevMix').innerText = val + " %";
+        localStorage.setItem('audio_reverb_mix', val);
+    });
+
+    return pedalOutput;
+}

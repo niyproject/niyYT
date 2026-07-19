@@ -16,11 +16,11 @@ export function initGraphicEQ(audioCtx, inputL, inputR, containerId) {
         let prevNode = channelInput;
         let lastNode;
         let html = "";
-        
+
         const nodes = eqFrequencies.map((freq, index) => {
             const savedGain = localStorage.getItem(`audio_eq_${channelStr}_${index}`) || '0';
             let filter = audioCtx.createBiquadFilter();
-            
+
             filter.type = (index === 0) ? "lowshelf" : (index === eqFrequencies.length - 1) ? "highshelf" : "peaking";
             filter.frequency.value = freq;
             filter.gain.value = parseInt(savedGain);
@@ -34,15 +34,16 @@ export function initGraphicEQ(audioCtx, inputL, inputR, containerId) {
             // Buat HTML Slider
             let label = freq >= 1000 ? (freq/1000).toString().replace('.', 'k') + (freq%1000==0?'k':'') : freq;
             if(["1.2k", "1.6k", "2.5k", "3.1k", "6.3k", "12.5k"].includes(label)) {} // bypass lama
-            
+
             html += `
                 <div class="eq-band">
                     <span>${label}</span>
                     <input type="range" class="vertical-slider" id="eq_sl_${channelStr}_${index}" min="-15" max="15" value="${savedGain}" step="1">
                     <div class="eq-val" id="eq_val_${channelStr}_${index}">${savedGain > 0 ? '+'+savedGain : savedGain} dB</div>
                 </div>`;
+            
             return filter;
-        });
+        }); // <--- INI BUNG PENUTUP YANG HILANG
 
         document.getElementById(rackId).innerHTML = html;
 
@@ -57,7 +58,7 @@ export function initGraphicEQ(audioCtx, inputL, inputR, containerId) {
         });
 
         // Kembalikan node terakhir (ujung kabel setelah melewati 30 filter)
-        return lastNode; 
+        return lastNode;
     };
 
     const finalOutL = createFilterChain(inputL, 'L', 'eqContainerL');

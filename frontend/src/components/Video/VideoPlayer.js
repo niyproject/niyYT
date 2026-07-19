@@ -1,21 +1,16 @@
-import './VideoCard.css';
+import './VideoPlayer.css';
 import { fetchDirectUrl } from '../../api/youtube';
 
-// Penampung handler di luar scope fungsi agar mudah dibersihkan
-// untuk mencegah memory leak saat komponen di-render ulang
 let playUrlHandler = null;
 
-export function renderVideoCard(containerId, onVideoReady) {
+export function renderVideoPlayer(containerId, onVideoReady) {
     const container = document.getElementById(containerId);
 
-    // ==========================================
-    // UPDATE HTML: Wadah Video, Custom Controls & Mini Player
-    // ==========================================
+    // Suntikkan HTML Player Murni
     container.innerHTML = `
         <div class="video-container" id="vidContainer" style="display:none; padding: 15px; background: #1a1a1a; border-radius: 12px; margin-bottom: 20px;">
-
             <div id="topHeaderBar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 0 5px;">
-                <div id="videoTitleDisplay" style="color: #fff; font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 15px; font-family: 'Poppins', system-ui, sans-serif;">
+                <div id="videoTitleDisplay" style="color: #fff; font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 15px; font-family: 'Poppins', sans-serif;">
                     Pilih lagu di bawah...
                 </div>
                 <div id="statusIconDisplay" style="color: #fff; font-size: 18px; flex-shrink: 0; cursor: pointer;">
@@ -26,18 +21,15 @@ export function renderVideoCard(containerId, onVideoReady) {
             <div class="video-wrapper">
                 <div id="playerWrapper" style="position: relative; width: 100%; border-radius: 8px; overflow: hidden; background: #000; aspect-ratio: 16/9;">
                     <video id="mainPlayer" crossorigin="anonymous" playsinline style="width:100%; height: 100%; display: block;"></video>
-
                     <div id="thumbOverlay" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; background-color: #000; cursor: pointer;">
                         <img id="overlayImage" src="" style="width: 100%; height: 100%; object-fit: cover; opacity: 0.5;">
                         <div id="overlaySpinner" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); display: none;">
                             <div class="loading-spinner"></div>
                         </div>
-
-                        <div id="overlayErrorText" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); display: none; color: white; font-size: 20px; font-weight: bold; text-align: center; text-shadow: 0 2px 5px rgba(0,0,0,0.9); width: 90%;">
+                        <div id="overlayErrorText" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); display: none; color: white; font-size: 20px; font-weight: bold; text-align: center; width: 90%;">
                             Video tidak dapat diputar!
                         </div>
-
-                        <div id="overlayStandbyPlay" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 60px; color: rgba(255,0,0,0.8); display: none; text-shadow: 0px 0px 10px black;">
+                        <div id="overlayStandbyPlay" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 60px; color: rgba(255,0,0,0.8); display: none;">
                             <i class="fa-solid fa-circle-play"></i>
                         </div>
                     </div>
@@ -45,51 +37,42 @@ export function renderVideoCard(containerId, onVideoReady) {
 
                 <div class="custom-controls" style="margin-top: 15px;">
                     <div class="progress-area" style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
-                        <span id="currentTimeDisplay" style="color: #fff; font-size: 12px; font-family: 'Poppins', system-ui, sans-serif;">00:00</span>
+                        <span id="currentTimeDisplay" style="color: #fff; font-size: 12px; font-family: 'Poppins', sans-serif;">00:00</span>
                         <input type="range" id="progressBar" min="0" max="100" value="0" style="flex: 1; cursor: pointer; accent-color: #ff0000; height: 4px; border-radius: 2px; outline: none;">
-                        <span id="durationDisplay" style="color: #fff; font-size: 12px; font-family: 'Poppins', system-ui, sans-serif;">00:00</span>
+                        <span id="durationDisplay" style="color: #fff; font-size: 12px; font-family: 'Poppins', sans-serif;">00:00</span>
                     </div>
 
                     <div class="buttons-area" style="display: flex; justify-content: space-between; align-items: center;">
                         <div class="playback-controls" style="display: flex; align-items: center; gap: 15px;">
                             <button class="ctrl-btn" id="btnPrev" title="Previous"><i class="fa-solid fa-backward-step"></i></button>
                             <button class="ctrl-btn" id="btnSeekBack" title="Mundur 5 Detik"><i class="fa-solid fa-backward"></i></button>
-
                             <button class="ctrl-btn play-btn" id="btnPlayPause" title="Play/Pause"><i class="fa-solid fa-play"></i></button>
-
                             <button class="ctrl-btn" id="btnSeekForward" title="Maju 5 Detik"><i class="fa-solid fa-forward"></i></button>
                             <button class="ctrl-btn" id="btnNext" title="Next"><i class="fa-solid fa-forward-step"></i></button>
                         </div>
-
                         <div class="tools-controls" style="display: flex; gap: 15px;">
-                            <!-- 💡 TOMBOL SAKELAR AUDIO MODE -->
                             <button class="ctrl-btn" id="btnToggleAudio" title="Mode Audio Only"><i class="fa-brands fa-itunes"></i></button>
                             <button class="ctrl-btn" id="btnPip" title="Picture in Picture"><i class="fa-solid fa-clone"></i></button>
                             <button class="ctrl-btn" id="btnFullscreen" title="Fullscreen"><i class="fa-solid fa-expand"></i></button>
                         </div>
                     </div>
                 </div>
-            </div> <!-- End of video-wrapper -->
+            </div>
 
-            <!-- 💡 WADAH BARU: MINI PLAYER LAYOUT (AUDIO MODE) -->
+            <!-- LAYOUT MINI PLAYER (AUDIO MODE) -->
             <div id="miniPlayerLayout" class="mini-player-layout">
                 <img id="miniPlayerThumb" src="" alt="Thumb" class="mini-thumb">
-                
                 <div class="mini-right-content">
                     <div class="mini-top-row">
-                        <!-- Judul mini yang akan ikut kepotong (...) -->
                         <div id="miniVideoTitle" style="color: #fff; font-size: 14px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 85%;">Loading...</div>
                         <div id="btnMiniClose" style="color: #aaa; cursor: pointer; font-size: 16px;"><i class="fa-solid fa-xmark"></i></div>
                     </div>
-                    
                     <div class="mini-controls-row">
                         <button class="ctrl-btn" id="btnMiniPrev" style="font-size: 12px;"><i class="fa-solid fa-backward-step"></i></button>
                         <button class="ctrl-btn" id="btnMiniRewind" style="font-size: 12px;"><i class="fa-solid fa-backward"></i></button>
                         <button class="ctrl-btn play-btn" id="btnMiniPlay" style="font-size: 14px; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center;"><i class="fa-solid fa-play"></i></button>
                         <button class="ctrl-btn" id="btnMiniForward" style="font-size: 12px;"><i class="fa-solid fa-forward"></i></button>
                         <button class="ctrl-btn" id="btnMiniNext" style="font-size: 12px;"><i class="fa-solid fa-forward-step"></i></button>
-                        
-                        <!-- Tombol Sakelar Balik ke Video Mode -->
                         <button class="ctrl-btn" id="btnToggleVideo" style="margin-left: auto; color: #1db954;" title="Mode Video"><i class="fa-solid fa-film"></i></button>
                     </div>
                 </div>
@@ -97,6 +80,7 @@ export function renderVideoCard(containerId, onVideoReady) {
         </div>
     `;
 
+    // Ambil semua elemen DOM dari HTML di atas
     const videoTitleDisplay = document.getElementById('videoTitleDisplay');
     const statusIconDisplay = document.getElementById('statusIconDisplay');
     const overlayErrorText = document.getElementById('overlayErrorText');
@@ -106,35 +90,27 @@ export function renderVideoCard(containerId, onVideoReady) {
     const overlayImage = document.getElementById('overlayImage');
     const overlaySpinner = document.getElementById('overlaySpinner');
     const overlayStandbyPlay = document.getElementById('overlayStandbyPlay');
-
     const progressBar = document.getElementById('progressBar');
     const currentTimeDisplay = document.getElementById('currentTimeDisplay');
     const durationDisplay = document.getElementById('durationDisplay');
     const btnPlayPause = document.getElementById('btnPlayPause');
 
-    // Deklarasi Elemen Mini Player Baru
     const btnToggleAudio = document.getElementById('btnToggleAudio');
     const btnToggleVideo = document.getElementById('btnToggleVideo');
     const miniPlayerThumb = document.getElementById('miniPlayerThumb');
     const miniVideoTitle = document.getElementById('miniVideoTitle');
     const btnMiniClose = document.getElementById('btnMiniClose');
-    
     const btnMiniPlay = document.getElementById('btnMiniPlay');
     const btnMiniPrev = document.getElementById('btnMiniPrev');
     const btnMiniNext = document.getElementById('btnMiniNext');
     const btnMiniRewind = document.getElementById('btnMiniRewind');
     const btnMiniForward = document.getElementById('btnMiniForward');
 
-    // ==========================================
-    // VARIABLE INTERNAL (STATE)
-    // ==========================================
     let stallTimer = null;
     let activeStreamUrl = null;
     let pendingResumeHandler = null;
 
-    // ==========================================
-    // FUNGSI PENGENDALI LAYAR OVERLAY
-    // ==========================================
+    // Logika Overlay Manajemen
     const showOverlay = (mode, thumbUrl) => {
         if(thumbUrl) {
             overlayImage.src = thumbUrl;
@@ -142,10 +118,7 @@ export function renderVideoCard(containerId, onVideoReady) {
         } else {
             overlayImage.src = localStorage.getItem('yt_cached_thumb') || '';
         }
-
         thumbOverlay.style.display = 'block';
-
-        // Reset semua tulisan & spinner
         overlaySpinner.style.display = 'none';
         overlayStandbyPlay.style.display = 'none';
         if(overlayErrorText) overlayErrorText.style.display = 'none';
@@ -161,95 +134,56 @@ export function renderVideoCard(containerId, onVideoReady) {
             overlaySpinner.style.display = 'block';
         }
     };
-    const hideOverlay = () => {
-        thumbOverlay.style.display = 'none';
-        overlayStandbyPlay.style.display = 'none';
-        overlaySpinner.style.display = 'none';
-    };
+    const hideOverlay = () => { thumbOverlay.style.display = 'none'; };
 
-    // ==========================================
-    // 💡 SAKELAR MASUK MODE AUDIO (DENGAN ANIMASI)
-    // ==========================================
+    // Sakelar Mode Audio & Video
     btnToggleAudio.addEventListener('click', () => {
-        // 1. Panggil animasi pudar/ngilang
         vidContainer.classList.add('switching-mode');
-        
-        // 2. Tunggu 300ms (biar pudar sempurna), baru ganti tata letak
         setTimeout(() => {
-            const currentThumb = localStorage.getItem('yt_cached_thumb') || '';
-            const currentTitle = localStorage.getItem('yt_cached_title') || 'No Title';
-            
-            miniPlayerThumb.src = currentThumb;
-            miniVideoTitle.innerText = currentTitle;
-            
+            miniPlayerThumb.src = localStorage.getItem('yt_cached_thumb') || '';
+            miniVideoTitle.innerText = localStorage.getItem('yt_cached_title') || 'No Title';
             vidContainer.classList.add('mini-audio-mode');
             localStorage.setItem('yt_player_mode', 'audio');
-            
-            // 3. Munculkan kembali dengan tata letak baru
             vidContainer.classList.remove('switching-mode');
         }, 300);
     });
 
-    // ==========================================
-    // 💡 SAKELAR BALIK MODE VIDEO (DENGAN ANIMASI)
-    // ==========================================
     btnToggleVideo.addEventListener('click', () => {
-        // 1. Panggil animasi pudar/ngilang
         vidContainer.classList.add('switching-mode');
-        
-        // 2. Tunggu 300ms, baru ganti tata letak
         setTimeout(() => {
             vidContainer.classList.remove('mini-audio-mode');
             localStorage.setItem('yt_player_mode', 'video');
-            
-            // 3. Munculkan kembali dengan tata letak baru
             vidContainer.classList.remove('switching-mode');
         }, 300);
     });
 
-    // ==========================================
-    // 💡 LOGIKA TOMBOL CLOSE / BATAL
-    // ==========================================
+    // Tombol Close Player
     const executeClosePlayer = () => {
         if (!statusIconDisplay.innerHTML.includes('fa-music')) {
-            // 1. MATIKAN MESIN TOTAL (Hard Stop)
             player.pause();
             player.removeAttribute('src');
             player.load();
             clearStallDetector();
             activeStreamUrl = null;
-
-            // 2. BERSIHKAN JEJAK MEMORI
             localStorage.removeItem('yt_cached_url');
             localStorage.removeItem('yt_cached_title');
             localStorage.removeItem('yt_saved_time');
-
-            // 3. RESET UI
             videoTitleDisplay.innerText = "Pilih lagu di bawah...";
             statusIconDisplay.innerHTML = '<i class="fa-solid fa-music"></i>';
-            hideOverlay(); 
+            hideOverlay();
             vidContainer.classList.remove('mini-audio-mode');
-
-            // 4. HAPUS EFEK HIJAU 'Now Playing'
             document.dispatchEvent(new CustomEvent('app:play-url', { detail: { url: null } }));
-
-            // 5. EKSEKUSI ANIMASI PENUTUPAN
             vidContainer.classList.add('closing');
             setTimeout(() => {
                 vidContainer.style.display = 'none';
-                vidContainer.classList.remove('closing'); 
+                vidContainer.classList.remove('closing');
             }, 350);
         }
     };
-
     statusIconDisplay.addEventListener('click', executeClosePlayer);
     btnMiniClose.addEventListener('click', executeClosePlayer);
 
-    // ==========================================
-    // LOGIKA KONTROL VIDEO (OTAK TOMBOL)
-    // ==========================================
-
-    // 1. Update Play/Pause Icon
+    // Playback Logic & Seek
     player.addEventListener('play', () => {
         btnPlayPause.innerHTML = '<i class="fa-solid fa-pause"></i>';
         btnMiniPlay.innerHTML = '<i class="fa-solid fa-pause"></i>';
@@ -259,23 +193,15 @@ export function renderVideoCard(containerId, onVideoReady) {
         btnMiniPlay.innerHTML = '<i class="fa-solid fa-play"></i>';
     });
 
-    // 2. Klik Tombol Play/Pause
     const togglePlayState = () => {
         const savedUrl = localStorage.getItem('yt_cached_url');
-
-        // Kasus 1: Kalau mesinnya kosong atau nge-hang, kita paksa fetch ulang (mirip fungsi Overlay)
         if (!player.src || player.src === window.location.href || player.readyState === 0) {
             showOverlay('loading');
             if (savedUrl) loadAndPlayVideo(savedUrl);
             return;
         }
-
-        // Kasus 2: Play/Pause normal
         if (player.paused) {
-            player.play().then(() => {
-                hideOverlay();
-            }).catch(err => {
-                console.log("Play manual masih ditolak, muat ulang:", err);
+            player.play().then(() => hideOverlay()).catch(() => {
                 showOverlay('loading');
                 if (savedUrl) loadAndPlayVideo(savedUrl);
             });
@@ -283,33 +209,19 @@ export function renderVideoCard(containerId, onVideoReady) {
             player.pause();
         }
     };
-
     btnPlayPause.addEventListener('click', togglePlayState);
     btnMiniPlay.addEventListener('click', togglePlayState);
 
-    // 3. Seek Maju/Mundur
-    const seekBackward = () => {
-        if (player.duration) {
-            player.currentTime = Math.max(0, player.currentTime - 5);
-        }
-    };
-    const seekForward = () => {
-        if (player.duration) {
-            player.currentTime = Math.min(player.duration, player.currentTime + 5);
-        }
-    };
-
-
+    const seekBackward = () => { if (player.duration) player.currentTime = Math.max(0, player.currentTime - 5); };
+    const seekForward = () => { if (player.duration) player.currentTime = Math.min(player.duration, player.currentTime + 5); };
     document.getElementById('btnSeekBack').addEventListener('click', seekBackward);
     document.getElementById('btnSeekForward').addEventListener('click', seekForward);
     btnMiniRewind.addEventListener('click', seekBackward);
     btnMiniForward.addEventListener('click', seekForward);
 
-    // 4. Update Progress Bar & Waktu
+    // Progress Bar Sync
     player.addEventListener('timeupdate', () => {
-        const percent = (player.currentTime / player.duration) * 100;
-        progressBar.value = percent || 0;
-
+        progressBar.value = (player.currentTime / player.duration) * 100 || 0;
         const format = (sec) => {
             const m = Math.floor(sec / 60);
             const s = Math.floor(sec % 60);
@@ -319,122 +231,82 @@ export function renderVideoCard(containerId, onVideoReady) {
         if(player.duration) durationDisplay.innerText = format(player.duration);
     });
 
-    // 5. Geser Progress Bar (Manual Seek)
     progressBar.addEventListener('input', (e) => {
-        const time = (e.target.value / 100) * player.duration;
-        player.currentTime = time;
+        player.currentTime = (e.target.value / 100) * player.duration;
     });
 
-    // 6. Next & Prev
-    const playNext = () => document.dispatchEvent(new CustomEvent('app:play-next'));
-    const playPrev = () => document.dispatchEvent(new CustomEvent('app:play-prev'));
-    
-    document.getElementById('btnNext').addEventListener('click', playNext);
-    document.getElementById('btnPrev').addEventListener('click', playPrev);
-    btnMiniNext.addEventListener('click', playNext);
-    btnMiniPrev.addEventListener('click', playPrev);
+    document.getElementById('btnNext').addEventListener('click', () => document.dispatchEvent(new CustomEvent('app:play-next')));
+    document.getElementById('btnPrev').addEventListener('click', () => document.dispatchEvent(new CustomEvent('app:play-prev')));
+    btnMiniNext.addEventListener('click', () => document.dispatchEvent(new CustomEvent('app:play-next')));
+    btnMiniPrev.addEventListener('click', () => document.dispatchEvent(new CustomEvent('app:play-prev')));
 
-
-    // ==========================================
-    // FUNGSI UTAMA LOAD VIDEO
-    // ==========================================
+    // Core Stream Loader
     const loadAndPlayVideo = async (url) => {
         vidContainer.style.display = "block";
-
         try {
             const data = await fetchDirectUrl(url);
             activeStreamUrl = `/stream-video?url=${encodeURIComponent(data.directUrl)}`;
             player.src = activeStreamUrl;
             player.controls = false;
-
             player.addEventListener('loadedmetadata', function onMeta() {
                 const savedTime = localStorage.getItem('yt_saved_time');
-                if (savedTime && parseFloat(savedTime) > 0) {
-                    player.currentTime = parseFloat(savedTime);
-                }
+                if (savedTime && parseFloat(savedTime) > 0) player.currentTime = parseFloat(savedTime);
                 player.removeEventListener('loadedmetadata', onMeta);
             });
-
-            try {
-                await player.play();
-                clearStallDetector();
-            } catch (e) {
-                console.log("Auto-play ditahan browser.");
-                showOverlay('standby');
-                
-                // 💡 FIX: Beritahu tombol UI untuk ganti jadi icon Play
-                btnPlayPause.innerHTML = '<i class="fa-solid fa-play"></i>';
-                btnMiniPlay.innerHTML = '<i class="fa-solid fa-play"></i>';
-                
-                // Hentikan spinner muter di kanan atas
-                statusIconDisplay.innerHTML = '<i class="fa-solid fa-music"></i>'; 
-                btnMiniClose.innerHTML = '<i class="fa-solid fa-xmark"></i>';
-            }
-
-
-        } catch (err) {
-            hideOverlay();
+            await player.play();
+            clearStallDetector();
+        } catch (e) {
+            showOverlay('standby');
+            btnPlayPause.innerHTML = '<i class="fa-solid fa-play"></i>';
+            btnMiniPlay.innerHTML = '<i class="fa-solid fa-play"></i>';
+            statusIconDisplay.innerHTML = '<i class="fa-solid fa-music"></i>';
+            btnMiniClose.innerHTML = '<i class="fa-solid fa-xmark"></i>';
         }
     };
 
-    // ==========================================
-    // LOGIKA STALL DETECTOR
-    // ==========================================
+    // Stall Detector Logic
     const startStallDetector = () => {
         clearStallDetector();
-
         stallTimer = setTimeout(() => {
             if (activeStreamUrl && !player.paused) {
                 const lastTime = player.currentTime;
                 localStorage.setItem('yt_saved_time', lastTime);
-
                 player.pause();
                 player.removeAttribute('src');
-                player.src = '';
                 player.load();
-
                 player.src = activeStreamUrl;
                 player.load();
 
-                if (pendingResumeHandler) {
-                    player.removeEventListener('loadedmetadata', pendingResumeHandler);
-                }
-
+                if (pendingResumeHandler) player.removeEventListener('loadedmetadata', pendingResumeHandler);
                 pendingResumeHandler = function onResume() {
                     player.currentTime = lastTime;
-                    player.play().catch(() => {
-                        hideOverlay();
-                    });
-
+                    player.play().catch(() => hideOverlay());
                     player.removeEventListener('loadedmetadata', pendingResumeHandler);
                     pendingResumeHandler = null;
                 };
-
                 player.addEventListener('loadedmetadata', pendingResumeHandler);
             }
         }, 6000);
     };
 
-    const clearStallDetector = () => {
-        if (stallTimer) {
-            clearTimeout(stallTimer);
-            stallTimer = null;
-        }
-    };
+    const clearStallDetector = () => { if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; } };
 
     // ==========================================
     // SINKRONISASI ICON MINI PLAYER DENGAN STATUS LAGU
     // ==========================================
     player.addEventListener('waiting', () => {
         statusIconDisplay.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-        // 💡 MINI PLAYER: Ubah tombol X jadi spinner saat loading/buffering
         btnMiniClose.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+        
+        // 💡 FIX: TAMBAHKAN BARIS INI BUNG! 
+        // Biar layar utama ditutup sama thumbnail ngeblur + animasi muter muter
+        showOverlay('loading'); 
+        
         startStallDetector();
     });
 
     player.addEventListener('playing', () => {
-        statusIconDisplay.innerHTML = '<i class="fa-solid fa-xmark"></i>'; 
-        // 💡 MINI PLAYER: Balikin jadi icon X pas lagu udah mulai bunyi
+        statusIconDisplay.innerHTML = '<i class="fa-solid fa-xmark"></i>';
         btnMiniClose.innerHTML = '<i class="fa-solid fa-xmark"></i>';
         hideOverlay();
         clearStallDetector();
@@ -449,20 +321,19 @@ export function renderVideoCard(containerId, onVideoReady) {
 
         if (err.code === 4) {
             statusIconDisplay.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color: #ff4444;"></i>';
-            // 💡 MINI PLAYER: Ubah jadi tanda seru merah kalau error terblokir
             btnMiniClose.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color: #ff4444;"></i>';
-            showOverlay('error'); 
+            showOverlay('error');
         }
     });
 
     player.addEventListener('stalled', () => {
+        // 💡 FIX: TAMBAHKAN DI SINI JUGA BIAR MAKIN AMAN
+        showOverlay('loading');
+        
         startStallDetector();
     });
 
-    player.addEventListener('ended', () => {
-        document.dispatchEvent(new CustomEvent('app:play-next'));
-    });
-
+    player.addEventListener('ended', () => document.dispatchEvent(new CustomEvent('app:play-next')));
     player.addEventListener('timeupdate', () => {
         if (player.currentTime > 0 && player.readyState >= 2 && !player.paused) {
             clearStallDetector();
@@ -470,38 +341,14 @@ export function renderVideoCard(containerId, onVideoReady) {
         }
     });
 
-    player.oncanplay = () => {
-        hideOverlay();
-        onVideoReady(player);
-    };
+    player.oncanplay = () => { hideOverlay(); onVideoReady(player); };
 
-    // ==========================================
-    // LOGIKA PERGANTIAN VIDEO & KLIK OVERLAY
-    // ==========================================
     thumbOverlay.addEventListener('click', () => {
-        if (overlayStandbyPlay.style.display !== 'none') {
-            const savedUrl = localStorage.getItem('yt_cached_url');
-
-            if (!player.src || player.src === window.location.href) {
-                showOverlay('loading');
-                if (savedUrl) loadAndPlayVideo(savedUrl);
-            } else {
-                player.play().then(() => {
-                    hideOverlay();
-                }).catch(err => {
-                    console.log("Play manual masih ditolak, muat ulang:", err);
-                    showOverlay('loading');
-                    if (savedUrl) loadAndPlayVideo(savedUrl);
-                });
-            }
-        }
+        if (overlayStandbyPlay.style.display !== 'none') togglePlayState();
     });
 
-
-    if (playUrlHandler) {
-        document.removeEventListener('app:play-url', playUrlHandler);
-    }
-
+    // Global Command Event Interceptor
+    if (playUrlHandler) document.removeEventListener('app:play-url', playUrlHandler);
     playUrlHandler = async (e) => {
         const url = e.detail.url;
         const thumb = e.detail.thumbnail;
@@ -509,165 +356,85 @@ export function renderVideoCard(containerId, onVideoReady) {
         const isLocal = e.detail.isLocal;
         const fileHandle = e.detail.fileHandle;
 
-        // ==========================================
-        // 💡 FIX 1: CEGAH RAM BOCOR (Memory Leak)
-        // Bersihkan memori Blob URL lagu lokal sebelumnya jika ada
-        // ==========================================
-        if (activeStreamUrl && activeStreamUrl.startsWith('blob:')) {
-            URL.revokeObjectURL(activeStreamUrl);
-        }
+        if (activeStreamUrl && activeStreamUrl.startsWith('blob:')) URL.revokeObjectURL(activeStreamUrl);
 
-        // ==========================================
-        // 💡 FIX 2: PINDAHKAN MEDIA SESSION KE ATAS
-        // Biar lagu Lokal (Offline) juga dapet notifikasi Lockscreen!
-        // ==========================================
         if ('mediaSession' in navigator) {
             navigator.mediaSession.metadata = new MediaMetadata({
-                title: title, 
-                artist: isLocal ? 'Lagu Offline Lokal' : 'YT Audio Mixer', // Bedakan artisnya
-                artwork: [
-                    { src: thumb || 'https://via.placeholder.com/512', sizes: '512x512', type: 'image/jpeg' }
-                ]
+                title: title,
+                artist: isLocal ? 'Lagu Offline Lokal' : 'YT Audio Mixer',
+                artwork: [{ src: thumb || 'https://via.placeholder.com/512', sizes: '512x512', type: 'image/jpeg' }]
             });
-
             navigator.mediaSession.setActionHandler('play', () => player.play());
             navigator.mediaSession.setActionHandler('pause', () => player.pause());
             navigator.mediaSession.setActionHandler('previoustrack', () => document.dispatchEvent(new CustomEvent('app:play-prev')));
             navigator.mediaSession.setActionHandler('nexttrack', () => document.dispatchEvent(new CustomEvent('app:play-next')));
         }
 
-        // ==========================================
-        // 1. JALUR KHUSUS LAGU OFFLINE LOKAL
-        // ==========================================
+        // Jalur Lagu Lokal Luring
         if (isLocal && fileHandle) {
-
             vidContainer.style.display = "block";
-
             localStorage.setItem('yt_cached_title', title);
             localStorage.setItem('yt_cached_thumb', thumb);
             localStorage.setItem('yt_cached_url', title);
-
             videoTitleDisplay.innerText = title;
             miniVideoTitle.innerText = title;
             if(thumb) miniPlayerThumb.src = thumb;
-
             statusIconDisplay.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
             btnMiniClose.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-
             showOverlay('loading', thumb);
 
             try {
                 const file = await fileHandle.getFile();
-                const localBlobUrl = URL.createObjectURL(file); // RAM dipakai di sini
-
-                activeStreamUrl = localBlobUrl;
+                activeStreamUrl = URL.createObjectURL(file);
                 player.src = activeStreamUrl;
-
                 await player.play();
                 clearStallDetector();
-            } catch (err) {
-                console.error("Gagal putar file lokal:", err);
-                showOverlay('error');
-            }
-            return; // 🛑 Hentikan kode disini, jangan eksekusi fetch backend!
+            } catch (err) { showOverlay('error'); }
+            return;
         }
 
-        // ==========================================
-        // 2. KODE LAMA YOUTUBE (Jalur Online)
-        // ==========================================
         if (!url) return;
-
         localStorage.setItem('yt_cached_title', title);
         videoTitleDisplay.innerText = title;
-
         miniVideoTitle.innerText = title;
         if(thumb) miniPlayerThumb.src = thumb;
-
         statusIconDisplay.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
         btnMiniClose.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-
         showOverlay('loading', thumb);
-
         clearStallDetector();
-        if (pendingResumeHandler) {
-            player.removeEventListener('loadedmetadata', pendingResumeHandler);
-            pendingResumeHandler = null;
-        }
 
         if (url !== localStorage.getItem('yt_cached_url')) {
             localStorage.setItem('yt_saved_time', '0');
             player.pause();
             player.currentTime = 0;
             player.removeAttribute('src');
-            player.src = '';
             player.load();
         }
-
         localStorage.setItem('yt_cached_url', url);
         loadAndPlayVideo(url);
     };
-
     document.addEventListener('app:play-url', playUrlHandler);
 
-    // ==========================================
-    // LAZY LOAD SAAT REFRESH
-    // ==========================================
+    // Boot Restore Session Memory
     const savedUrl = localStorage.getItem('yt_cached_url');
-    const savedTitle = localStorage.getItem('yt_cached_title');
-    const savedThumb = localStorage.getItem('yt_cached_thumb');
-    const savedMode = localStorage.getItem('yt_player_mode');
-
     if (savedUrl) {
-        if (savedTitle) {
-            videoTitleDisplay.innerText = savedTitle;
-            miniVideoTitle.innerText = savedTitle;
-        }
-        if (savedThumb) {
-            miniPlayerThumb.src = savedThumb;
-        }
-        
+        videoTitleDisplay.innerText = localStorage.getItem('yt_cached_title') || '';
+        miniVideoTitle.innerText = localStorage.getItem('yt_cached_title') || '';
+        if (localStorage.getItem('yt_cached_thumb')) miniPlayerThumb.src = localStorage.getItem('yt_cached_thumb');
         vidContainer.style.display = "block";
         showOverlay('standby');
-
-        // Kembalikan ke mode mini jika user terakhir meninggalkannya di mode audio
-        if (savedMode === 'audio') {
-            vidContainer.classList.add('mini-audio-mode');
-        }
+        if (localStorage.getItem('yt_player_mode') === 'audio') vidContainer.classList.add('mini-audio-mode');
     }
 
-    // ==========================================
-    // UTILITY UI (PIP & FULLSCREEN)
-    // ==========================================
+    // Utility Screen Actions
     document.getElementById('btnPip').addEventListener('click', async () => {
-        try {
-            if (document.pictureInPictureElement) await document.exitPictureInPicture();
-            else await player.requestPictureInPicture();
-        } catch (e) { console.error("PiP Error", e); }
+        if (document.pictureInPictureElement) await document.exitPictureInPicture();
+        else await player.requestPictureInPicture().catch(() => {});
     });
-
-    // 💡 TYPO FIXED HERE
     document.getElementById('btnFullscreen').addEventListener('click', async () => {
-        try {
-            if (document.fullscreenElement) await document.exitFullscreen();
-            else await vidContainer.requestFullscreen();
-        } catch (e) { console.error("FS Error", e); }
+        if (document.fullscreenElement) await document.exitFullscreen();
+        else await vidContainer.requestFullscreen().catch(() => {});
     });
-
-    // ==========================================
-    // DETEKSI MODE PiP (PICTURE-IN-PICTURE)
-    // ==========================================
-    player.addEventListener('enterpictureinpicture', () => {
-        vidContainer.classList.add('is-pip');
-    });
-
-    player.addEventListener('leavepictureinpicture', () => {
-        vidContainer.classList.remove('is-pip');
-        setTimeout(() => {
-            if (player.paused) {
-                player.play().catch(err => {
-                    console.log("Sistem mencegah auto-play saat keluar PiP", err);
-                });
-            }
-        }, 150); 
-    });
+    player.addEventListener('enterpictureinpicture', () => vidContainer.classList.add('is-pip'));
+    player.addEventListener('leavepictureinpicture', () => vidContainer.classList.remove('is-pip'));
 }

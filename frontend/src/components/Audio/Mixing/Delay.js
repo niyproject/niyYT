@@ -1,4 +1,6 @@
-export function initDelayPedal(audioCtx, inputL, inputR, containerId) {
+import './Mixing.css';
+
+export function initDelay(audioCtx, inputL, inputR, containerId) {
     const savedL = localStorage.getItem('audio_delay_l') || '0';
     const savedR = localStorage.getItem('audio_delay_r') || '0';
     const savedLowCut = localStorage.getItem('audio_delay_lowcut') || '80';

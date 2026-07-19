@@ -1,3 +1,5 @@
+import './Mixing.css';
+
 export function initPanning(audioCtx, inputL, inputR, containerId) {
     const savedPan = localStorage.getItem('audio_pan') || '0';
     

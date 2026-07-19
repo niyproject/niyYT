@@ -8,7 +8,8 @@ export default defineConfig({
       '/get-direct-url': 'http://localhost:4000',
       '/stream-video': 'http://localhost:4000',
       '/search': 'http://localhost:4000',
-      '/trending': 'http://localhost:4000'
+      '/trending': 'http://localhost:4000',
+      '/playlist': 'http://localhost:4000'
     }
   }
 });
