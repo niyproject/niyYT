@@ -1,122 +1,82 @@
 const express = require('express');
 const cors = require('cors');
-const { execFile } = require('child_process'); 
+const { execFile } = require('child_process');
 const https = require('https');
 const http = require('http');
-const ytSearch = require('yt-search');
+const path = require('path');
+const fs = require('fs');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 // ==========================================
-// ENDPOINT 1: AMBIL URL MENTAH (ANTI BOT & ANTI ERROR FORMAT)
+// 💡 OTOMATISASI PATH NODE.JS & ENVIRONMENT (Lintas OS / VPS / Termux)
+// ==========================================
+const nodeBinaryPath = process.execPath;
+const folderNodeAsli = path.dirname(nodeBinaryPath);
+const fullEnv = Object.assign({}, process.env, {
+    PATH: `${folderNodeAsli}:${process.env.PATH || ''}`
+});
+
+// Helper check cookie Netscape yang valid agar tidak bikin yt-dlp crash
+const getValidCookiesArg = () => {
+    if (fs.existsSync('cookies.txt')) {
+        try {
+            const content = fs.readFileSync('cookies.txt', 'utf8');
+            if (content.startsWith('# Netscape')) {
+                return ['--cookies', 'cookies.txt'];
+            }
+        } catch (e) {
+            console.warn("⚠️ Gagal membaca cookies.txt, melanjutkan tanpa cookie.");
+        }
+    }
+    return [];
+};
+
+// ==========================================
+// ENDPOINT 1: AMBIL URL MENTAH (SANITY CHECK URL)
 // ==========================================
 app.post('/get-direct-url', (req, res) => {
-    const { url, mode } = req.body; 
-    
-    if (!url) return res.status(400).json({ error: "URL dibutuhkan" });
-    
-    const cleanUrl = url.split('?si=')[0];
-    console.log(`Mengekstrak URL: ${cleanUrl} (Mode: ${mode || 'video'})`);
+    const { url, mode } = req.body;
 
-    // 1. Susun tameng dasar: Wajib pakai jalur API Android biar ga dituduh BOT
+    if (!url) return res.status(400).json({ error: "URL dibutuhkan" });
+
+    // 💡 FIX: Bersihkan parameter playlist / share link agar murni ID video saja
+    let cleanUrl = url.split('?si=')[0].split('&list=')[0];
+
+    console.log(`🎬 Universal Extracting: ${cleanUrl} (Mode: ${mode || 'video'})`);
+
     let args = [
-        '-g', 
+        ...getValidCookiesArg(),
+        '-g',
         '--no-playlist',
-        '--extractor-args', 'youtube:player_client=android' // 💡 TAMENG SAKTI KEMBALI
+        '--js-runtimes', `node:${nodeBinaryPath}`,
+        '--remote-components', 'ejs:github',
+        '--extractor-args', 'youtube:player_client=web_embedded,android;player_skip=webpage'
     ];
 
-    // 2. Strategi Format Tawar-Menawar
     if (mode === 'audio') {
-        // Coba tarik audio terbaik (ba). 
-        // Kalau kena eksperimen SABR dari YouTube, fallback ke video terkecil (b).
-        args.push('-f', 'ba/b'); 
+        args.push('-f', 'ba/b');
     } else {
-        // Mode Video normal
-        args.push('-f', 'b[ext=mp4]/best[ext=mp4]');
+        args.push('-f', 'b[ext=mp4]/best[ext=mp4]/best');
     }
 
     args.push(cleanUrl);
 
-    execFile('yt-dlp', args, (error, stdout, stderr) => {
+    execFile('yt-dlp', args, { env: fullEnv, maxBuffer: 1024 * 1024 * 5 }, (error, stdout, stderr) => {
+        if (res.headersSent) return;
+
         if (error) {
             console.error("❌ YTDLP Error:", stderr || error.message);
-            return res.status(500).send("Gagal");
+            return res.status(500).send("Gagal mengekstrak video");
         }
+
         res.json({ directUrl: stdout.trim() });
     });
 });
 
-// ==========================================
-// ENDPOINT 2: PROXY STREAMING
-// ==========================================
-app.get('/stream-video', (req, res) => {
-    const directUrl = req.query.url;
-    if (!directUrl) return res.status(400).send("Kosong");
 
-    const options = { headers: {} };
-    if (req.headers.range) {
-        options.headers['Range'] = req.headers.range;
-    }
-
-    const client = directUrl.startsWith('https') ? https : http;
-
-    const proxyReq = client.get(directUrl, options, (ytResponse) => {
-        res.status(ytResponse.statusCode);
-
-        const headersToKeep = ['content-type', 'content-length', 'content-range', 'accept-ranges'];
-        for (const header of headersToKeep) {
-            if (ytResponse.headers[header]) {
-                res.setHeader(header, ytResponse.headers[header]);
-            }
-        }
-
-        ytResponse.pipe(res);
-    });
-
-    proxyReq.on('error', (err) => {
-        if (err.code !== 'ECONNRESET') {
-            console.error("❌ Proxy error:", err.message);
-        }
-
-        if (!res.headersSent) {
-            res.status(500).send("Gagal menyambung ke stream");
-        } else {
-            res.end();
-        }
-    });
-
-    req.on('close', () => {
-        proxyReq.destroy();
-    });
-});
-
-/*
-// ==========================================
-// ENDPOINT 3: SEARCH YOUTUBE (DENGAN PAGINASI)
-// ==========================================
-app.get('/search', async (req, res) => {
-    const keyword = req.query.q;
-    const page = parseInt(req.query.page) || 1; // Default ke halaman 1
-    
-    if (!keyword) return res.status(400).send("Keyword kosong");
-
-    try {
-        const result = await ytSearch(keyword);
-        
-        // Potong hasil pencarian berdasarkan nomor halaman
-        const start = (page - 1) * 10;
-        const end = page * 10;
-        const videos = result.videos.slice(start, end);
-        
-        res.json(videos);
-    } catch (err) {
-        console.error("🚨 ROUTE SEARCH ERROR:", err.message);
-        res.status(500).send("Gagal mencari");
-    }
-});
-*/
 
 // ==========================================
 // 💡 FUNGSI PAMUNGKAS: TRENDING GENERAL (DENGAN PAGINASI)
@@ -124,15 +84,15 @@ app.get('/search', async (req, res) => {
 const dapatkanVideoTrending = (page = 1) => {
     return new Promise((resolve, reject) => {
         const trendingUrl = 'https://www.youtube.com/playlist?list=PLkbaG37V-vG8Fib_qvgOKf3qzqA0SUk59';
-        
+
         // yt-dlp punya fitur bawaan buat ngambil urutan spesifik!
         const limit = 15;
         const start = ((page - 1) * limit) + 1;
         const end = page * limit;
 
         execFile('yt-dlp', [
-            '-J', 
-            '--flat-playlist', 
+            '-J',
+            '--flat-playlist',
             '--geo-bypass',
             '--playlist-start', start.toString(),
             '--playlist-end', end.toString(),
@@ -142,85 +102,19 @@ const dapatkanVideoTrending = (page = 1) => {
                 console.error("❌ YTDLP Exec Error:", stderr || error.message);
                 return reject(error);
             }
-            
+
             try {
                 if (!stdout) throw new Error("Data stdout dari yt-dlp kosong.");
 
                 const data = JSON.parse(stdout);
                 const entries = data.entries || [];
-                
+
                 // Nggak perlu di .slice(0, 10) lagi karena yt-dlp udah motongin dari sononya
                 const videos = entries.map(v => {
-                    const bestThumb = v.thumbnails && v.thumbnails.length > 0 
-                        ? v.thumbnails[v.thumbnails.length - 1].url 
-                        : '';
-
-                    let formatWaktu = '--:--';
-                    if (v.duration) {
-                        const m = Math.floor(v.duration / 60);
-                        const s = Math.floor(v.duration % 60).toString().padStart(2, '0');
-                        formatWaktu = `${m}:${s}`;
-                    }
-
-                    return {
-                        title: v.title || 'Video Tanpa Judul',
-                        url: v.url || `https://www.youtube.com/watch?v=${v.id}`,
-                        image: bestThumb,
-                        thumbnail: bestThumb,
-                        timestamp: formatWaktu, 
-                        author: { name: v.uploader || v.channel || 'YouTube' }
-                    };
-                });
-                
-                resolve(videos);
-            } catch (parseError) {
-                console.error("❌ YTDLP Parsing Error:", parseError.message);
-                reject(parseError);
-            }
-        });
-    });
-};
-
-
-// ==========================================
-// 💡 FUNGSI PAMUNGKAS: SEARCH YOUTUBE VIA YT-DLP (PAGINASI ASLI)
-// ==========================================
-const dapatkanVideoSearch = (keyword, page = 1) => {
-    return new Promise((resolve, reject) => {
-        // Trik: Ubah keyword jadi URL asli pencarian YouTube
-        const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(keyword)}`;
-
-        // Perhitungan urutan potong (1-10, 11-20, 21-30, dst)
-        const limit = 15;
-        const start = ((page - 1) * limit) + 1; 
-        const end = page * limit;
-
-        execFile('yt-dlp', [
-            '-J',
-            '--flat-playlist',
-            '--geo-bypass',
-            '--playlist-start', start.toString(),
-            '--playlist-end', end.toString(),
-            searchUrl
-        ], { maxBuffer: 1024 * 1024 * 5 }, (error, stdout, stderr) => {
-            if (error) {
-                console.error("❌ YTDLP Search Error:", stderr || error.message);
-                return reject(error);
-            }
-
-            try {
-                if (!stdout) throw new Error("Data stdout dari yt-dlp kosong.");
-
-                const data = JSON.parse(stdout);
-                const entries = data.entries || [];
-
-                const videos = entries.map(v => {
-                    // Ambil resolusi gambar terbaik
                     const bestThumb = v.thumbnails && v.thumbnails.length > 0
                         ? v.thumbnails[v.thumbnails.length - 1].url
                         : '';
 
-                    // Konversi durasi ke format 00:00
                     let formatWaktu = '--:--';
                     if (v.duration) {
                         const m = Math.floor(v.duration / 60);
@@ -249,16 +143,175 @@ const dapatkanVideoSearch = (keyword, page = 1) => {
 
 
 // ==========================================
-// ENDPOINT 3: SEARCH YOUTUBE (DENGAN YT-DLP)
+// 💡 FUNGSI SEARCH YOUTUBE (CLEAN RADIO MIX & FIX AVATAR)
+// ==========================================
+const dapatkanVideoSearch = (keyword, page = 1) => {
+    return new Promise((resolve, reject) => {
+        const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(keyword)}`;
+
+        const limit = 15;
+        const start = ((page - 1) * limit) + 1;
+        const end = page * limit;
+
+        const args = [
+            ...getValidCookiesArg(),
+            '-J',
+            '--flat-playlist',
+            '--geo-bypass',
+            '--playlist-start', start.toString(),
+            '--playlist-end', end.toString(),
+            searchUrl
+        ];
+
+        execFile('yt-dlp', args, { env: fullEnv, maxBuffer: 1024 * 1024 * 5 }, (error, stdout, stderr) => {
+            if (error) {
+                console.error("❌ YTDLP Search Error:", stderr || error.message);
+                return reject(error);
+            }
+
+            try {
+                if (!stdout) throw new Error("Data stdout dari yt-dlp kosong.");
+
+                const data = JSON.parse(stdout);
+                const entries = data.entries || [];
+
+                const videos = [];
+
+                for (const v of entries) {
+                    let rawUrl = v.url || `https://www.youtube.com/watch?v=${v.id}`;
+                    
+                    // 🛑 FILTER UTAMA: Buang Radio Mix / Unviewable Playlist buatan YouTube (RD...)
+                    if (rawUrl.includes('list=RD') || (v.id && v.id.startsWith('RD'))) {
+                        continue; 
+                    }
+
+                    let type = 'video';
+                    if (rawUrl.includes('/channel/') || rawUrl.includes('/c/') || rawUrl.includes('/@')) {
+                        type = 'channel';
+                    } else if (rawUrl.includes('list=')) {
+                        type = 'playlist';
+                    }
+
+                    const bestThumb = v.thumbnails && v.thumbnails.length > 0
+                        ? v.thumbnails[v.thumbnails.length - 1].url
+                        : (type === 'channel' 
+                            ? 'https://ui-avatars.com/api/?name=' + encodeURIComponent(v.title || 'Channel') + '&background=333&color=fff' 
+                            : '');
+
+                    let formatWaktu = '--:--';
+                    if (v.duration) {
+                        const m = Math.floor(v.duration / 60);
+                        const s = Math.floor(v.duration % 60).toString().padStart(2, '0');
+                        formatWaktu = `${m}:${s}`;
+                    }
+
+                    videos.push({
+                        title: v.title || 'Tanpa Judul',
+                        url: rawUrl,
+                        type: type,
+                        image: bestThumb,
+                        thumbnail: bestThumb,
+                        timestamp: formatWaktu,
+                        author: { name: v.uploader || v.channel || 'YouTube' }
+                    });
+                }
+
+                resolve(videos);
+            } catch (parseError) {
+                console.error("❌ YTDLP Parsing Error:", parseError.message);
+                reject(parseError);
+            }
+        });
+    });
+};
+
+// ==========================================
+// ENDPOINT 2: PROXY STREAMING (DENGAN AUTO-REDIRECT)
+// ==========================================
+app.get('/stream-video', (req, res) => {
+    const directUrl = req.query.url;
+    if (!directUrl) return res.status(400).send("URL Kosong");
+
+    // Bawa header Range dari frontend (penting banget buat fitur seek/fader)
+    const options = { headers: {} };
+    if (req.headers.range) {
+        options.headers['Range'] = req.headers.range;
+    }
+
+    let redirectCount = 0;
+    const MAX_REDIRECTS = 5; // Batasan agar tidak infinite loop
+    let activeProxyReq = null; // Menyimpan request yang sedang berjalan
+
+    // Fungsi rekursif untuk nembak URL
+    const fetchStream = (targetUrl) => {
+        if (redirectCount > MAX_REDIRECTS) {
+            console.error("❌ Terlalu banyak redirect dari YouTube");
+            if (!res.headersSent) res.status(500).send("Terlalu banyak redirect");
+            return;
+        }
+
+        const client = targetUrl.startsWith('https') ? https : http;
+
+        activeProxyReq = client.get(targetUrl, options, (ytResponse) => {
+            const { statusCode } = ytResponse;
+
+            // 1. Cek apakah ini respons Redirect (Kode 301, 302, 303, 307, 308)
+            if (statusCode >= 300 && statusCode < 400 && ytResponse.headers.location) {
+                redirectCount++;
+                const nextUrl = ytResponse.headers.location;
+                console.log(`🔀 Redirect ke-${redirectCount} diterima. Memutar rute...`);
+                
+                // Panggil ulang fungsi dengan URL tujuan yang baru
+                fetchStream(nextUrl);
+                return;
+            }
+
+            // 2. Kalau bukan redirect (biasanya 200 OK atau 206 Partial Content), teruskan ke Vite
+            res.status(statusCode);
+
+            const headersToKeep = ['content-type', 'content-length', 'content-range', 'accept-ranges'];
+            for (const header of headersToKeep) {
+                if (ytResponse.headers[header]) {
+                    res.setHeader(header, ytResponse.headers[header]);
+                }
+            }
+
+            // Alirkan (pipe) data video langsung ke frontend
+            ytResponse.pipe(res);
+        });
+
+        activeProxyReq.on('error', (err) => {
+            if (err.code !== 'ECONNRESET') {
+                console.error("❌ Proxy error:", err.message);
+            }
+            if (!res.headersSent) {
+                res.status(500).send("Gagal menyambung ke stream");
+            } else {
+                res.end();
+            }
+        });
+    };
+
+    // Bersihkan koneksi kalau user nutup tab, close player, atau skip lagu
+    req.on('close', () => {
+        if (activeProxyReq) activeProxyReq.destroy();
+    });
+
+    // Jalankan tembakan pertama
+    fetchStream(directUrl);
+});
+
+
+// ==========================================
+// ENDPOINT 3: SEARCH YOUTUBE
 // ==========================================
 app.get('/search', async (req, res) => {
     const keyword = req.query.q;
-    const page = parseInt(req.query.page) || 1; 
+    const page = parseInt(req.query.page) || 1;
 
     if (!keyword) return res.status(400).send("Keyword kosong");
 
     try {
-        // Langsung hajar pakai mesin baru
         const videos = await dapatkanVideoSearch(keyword, page);
         res.json(videos);
     } catch (err) {
@@ -266,7 +319,6 @@ app.get('/search', async (req, res) => {
         res.status(500).send("Gagal mencari");
     }
 });
-
 
 // ==========================================
 // ENDPOINT 4: GET TRENDING
@@ -291,13 +343,15 @@ app.get('/playlist', (req, res) => {
 
     console.log(`🎬 Mengurai Custom Playlist: ${playlistUrl}`);
 
-    // Gunakan trik flat-playlist andalan lu biar ekstraksinya kilat
-    execFile('yt-dlp', [
+    const args = [
+        ...getValidCookiesArg(),
         '-J',
         '--flat-playlist',
         '--geo-bypass',
         playlistUrl
-    ], { maxBuffer: 1024 * 1024 * 10 }, (error, stdout, stderr) => {
+    ];
+
+    execFile('yt-dlp', args, { env: fullEnv, maxBuffer: 1024 * 1024 * 10 }, (error, stdout, stderr) => {
         if (error) {
             console.error("❌ YTDLP Playlist Error:", stderr || error.message);
             return res.status(500).send("Gagal memuat playlist");
@@ -309,7 +363,6 @@ app.get('/playlist', (req, res) => {
             const data = JSON.parse(stdout);
             const entries = data.entries || [];
 
-            // Petakan struktur data agar pas dengan komponen list bawah (renderVideoList)
             const playlistVideos = entries.map(v => {
                 const bestThumb = v.thumbnails && v.thumbnails.length > 0
                     ? v.thumbnails[v.thumbnails.length - 1].url
@@ -339,6 +392,5 @@ app.get('/playlist', (req, res) => {
         }
     });
 });
-
 
 app.listen(4000, () => console.log("Backend Range-Proxy jalan di port 4000"));
