@@ -12,15 +12,16 @@ export const renderVideoList = (videos) => {
     videos.forEach(video => {
         const card = document.createElement('div');
         card.className = 'video-card';
-        card.dataset.url = video.url || video.title; // Fallback ke title untuk lagu offline
+        card.dataset.url = video.url || video.title;
 
         if (video.url === currentPlayingUrl || video.title === currentPlayingUrl) {
             card.classList.add('playing-now');
         }
 
-        // Susun struktur isi per elemen kartu
+        // ==========================================
+        // 1. KARTU OFFLINE LOKAL
+        // ==========================================
         if (video.isLocal) {
-            // Skema Render Kartu Offline Lokal
             card.className = 'video-card result-card';
             card.style.cssText = 'padding: 12px; border-bottom: 1px solid #333; cursor: pointer; display: flex; align-items: center; gap: 12px;';
             card.innerHTML = `
@@ -37,8 +38,59 @@ export const renderVideoList = (videos) => {
                     detail: { title: video.title, isLocal: true, fileHandle: video.fileHandle, thumbnail: video.thumbnail }
                 }));
             });
-        } else {
-            // Skema Render Kartu Online YouTube Biasa
+        } 
+        // ==========================================
+        // 2. KARTU CHANNEL YOUTUBE (DENGAN FALLBACK AVATAR)
+        // ==========================================
+        else if (video.type === 'channel') {
+            const fallbackAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(video.title)}&background=333&color=fff`;
+            card.innerHTML = `
+                <div class="thumb-wrapper" style="width: 70px; height: 70px; flex-shrink: 0; margin-right: 15px;">
+                    <img src="${video.image || fallbackAvatar}" 
+                         onerror="this.onerror=null; this.src='${fallbackAvatar}';" 
+                         class="video-thumb" 
+                         style="border-radius: 50%; object-fit: cover; width: 100%; height: 100%;" 
+                         alt="Channel Avatar" 
+                         loading="lazy">
+                </div>
+                <div class="video-info" style="flex: 1; display: flex; flex-direction: column; justify-content: center;">
+                    <div class="video-title" style="font-size: 15px; font-weight: 700;">${video.title}</div>
+                    <div class="video-author" style="color: #1db954; font-size: 12px; margin-top: 4px;">
+                        <i class="fa-solid fa-circle-check"></i> Channel YouTube
+                    </div>
+                </div>
+            `;
+            // Klik Channel: Muat daftar video dari channel tersebut
+            card.addEventListener('click', () => {
+                fetchPlaylistOrChannel(video.url);
+            });
+        }
+        // ==========================================
+        // 3. KARTU PLAYLIST YOUTUBE
+        // ==========================================
+        else if (video.type === 'playlist') {
+            card.innerHTML = `
+                <div class="thumb-wrapper" style="position: relative;">
+                    <img src="${video.image || video.thumbnail}" class="video-thumb" alt="Playlist Thumbnail" loading="lazy">
+                    <div style="position: absolute; right: 0; bottom: 0; top: 0; width: 40%; background: rgba(0,0,0,0.7); display: flex; flex-direction: column; justify-content: center; align-items: center; color: #fff;">
+                        <i class="fa-solid fa-list-ul fa-lg"></i>
+                        <span style="font-size: 10px; margin-top: 4px; font-weight: bold;">PLAYLIST</span>
+                    </div>
+                </div>
+                <div class="video-info">
+                    <div class="video-title">${video.title}</div>
+                    <div class="video-author">${video.author.name} • Playlist</div>
+                </div>
+            `;
+            // Klik Playlist: Muat daftar lagu dari playlist tersebut
+            card.addEventListener('click', () => {
+                fetchPlaylistOrChannel(video.url);
+            });
+        } 
+        // ==========================================
+        // 4. KARTU VIDEO BIASA (BISA DIPUTAR)
+        // ==========================================
+        else {
             card.innerHTML = `
                 <div class="thumb-wrapper">
                     <img src="${video.image || video.thumbnail}" class="video-thumb" alt="Thumbnail" loading="lazy">
@@ -55,10 +107,11 @@ export const renderVideoList = (videos) => {
                 }));
             });
         }
+
         searchResults.appendChild(card);
     });
 
-    // SISTEM PAGINASI TOMBOL BAWAH ONLINE
+    // SISTEM PAGINASI
     const isLocalMode = videos.length > 0 && videos[0].isLocal;
     if (videos.length > 0 && !isLocalMode) {
         const currentPage = parseInt(sessionStorage.getItem('yt_current_page')) || 1;
@@ -91,7 +144,25 @@ export const renderVideoList = (videos) => {
     }
 };
 
-// FUNGSI UTAMA: Eksekutor Pencari Data & Handler Skeleton Animasi Loading
+// HELPER: Fetch Playlist / Channel Isi Video
+const fetchPlaylistOrChannel = async (targetUrl) => {
+    searchStatus.innerText = "Membuka isi playlist / channel...";
+    searchResults.innerHTML = "";
+
+    try {
+        const res = await fetch(`/playlist?url=${encodeURIComponent(targetUrl)}`);
+        if (!res.ok) throw new Error("Gagal memuat playlist");
+        const videos = await res.json();
+        
+        // Tandai tiap item sebagai video agar dapat diputar
+        const formattedVideos = videos.map(v => ({ ...v, type: 'video' }));
+        renderVideoList(formattedVideos);
+    } catch (err) {
+        searchStatus.innerText = "Gagal memuat isi playlist / channel.";
+    }
+};
+
+// FUNGSI UTAMA: Eksekutor Pencari Data
 export const executeSearch = async (keyword = "", page = 1, autoPlayAction = false) => {
     searchStatus.innerText = `Memuat halaman ${page}...`;
     searchResults.innerHTML = "";
