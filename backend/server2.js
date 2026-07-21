@@ -76,6 +76,72 @@ app.post('/get-direct-url', (req, res) => {
     });
 });
 
+
+
+// ==========================================
+// 💡 FUNGSI PAMUNGKAS: TRENDING GENERAL (DENGAN PAGINASI)
+// ==========================================
+const dapatkanVideoTrending = (page = 1) => {
+    return new Promise((resolve, reject) => {
+        const trendingUrl = 'https://www.youtube.com/playlist?list=PLkbaG37V-vG8Fib_qvgOKf3qzqA0SUk59';
+
+        // yt-dlp punya fitur bawaan buat ngambil urutan spesifik!
+        const limit = 15;
+        const start = ((page - 1) * limit) + 1;
+        const end = page * limit;
+
+        execFile('yt-dlp', [
+            '-J',
+            '--flat-playlist',
+            '--geo-bypass',
+            '--playlist-start', start.toString(),
+            '--playlist-end', end.toString(),
+            trendingUrl
+        ], { maxBuffer: 1024 * 1024 * 5 }, (error, stdout, stderr) => {
+            if (error) {
+                console.error("❌ YTDLP Exec Error:", stderr || error.message);
+                return reject(error);
+            }
+
+            try {
+                if (!stdout) throw new Error("Data stdout dari yt-dlp kosong.");
+
+                const data = JSON.parse(stdout);
+                const entries = data.entries || [];
+
+                // Nggak perlu di .slice(0, 10) lagi karena yt-dlp udah motongin dari sononya
+                const videos = entries.map(v => {
+                    const bestThumb = v.thumbnails && v.thumbnails.length > 0
+                        ? v.thumbnails[v.thumbnails.length - 1].url
+                        : '';
+
+                    let formatWaktu = '--:--';
+                    if (v.duration) {
+                        const m = Math.floor(v.duration / 60);
+                        const s = Math.floor(v.duration % 60).toString().padStart(2, '0');
+                        formatWaktu = `${m}:${s}`;
+                    }
+
+                    return {
+                        title: v.title || 'Video Tanpa Judul',
+                        url: v.url || `https://www.youtube.com/watch?v=${v.id}`,
+                        image: bestThumb,
+                        thumbnail: bestThumb,
+                        timestamp: formatWaktu,
+                        author: { name: v.uploader || v.channel || 'YouTube' }
+                    };
+                });
+
+                resolve(videos);
+            } catch (parseError) {
+                console.error("❌ YTDLP Parsing Error:", parseError.message);
+                reject(parseError);
+            }
+        });
+    });
+};
+
+
 // ==========================================
 // 💡 FUNGSI SEARCH YOUTUBE (CLEAN RADIO MIX & FIX AVATAR)
 // ==========================================
